@@ -1,0 +1,25 @@
+# Build output
+dist/
+*.zip
+
+# Local/editor noise
+.vscode/
+.idea/
+*.swp
+*.swo
+Thumbs.db
+.DS_Store
+
+# WoW runtime/user data
+WTF/
+Cache/
+Logs/
+Errors/
+Screenshots/
+
+# Local secrets/config
+.env
+.env.*
+*.pem
+*.key
+secrets.*
