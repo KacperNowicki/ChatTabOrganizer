@@ -5,7 +5,7 @@ local DISPLAY_NAME = "Chat Tabs Organizer"
 local COMMAND = "/ctabs"
 
 local DEFAULTS = {
-    version = 5,
+    version = 6,
     enabled = true,
     createMissingTabs = true,
     dockTabs = true,
@@ -15,7 +15,8 @@ local DEFAULTS = {
     appearance = {
         enabled = true,
         applyToAllTabs = true,
-        fontKey = "current",
+        fontKey = "default",
+        fontFile = "Fonts\\FRIZQT__.TTF",
         fontSize = 14,
         background = {
             r = 0.02,
@@ -91,9 +92,9 @@ local RIGHT_COLUMN_OFFSET = 360
 local RIGHT_COLUMN_WIDTH = 300
 local COMPACT_SLIDER_WIDTH = 210
 local COMPACT_DROPDOWN_WIDTH = 165
+local CURRENT_TABS_LINE_LIMIT = 34
 
 local FONT_OPTIONS = {
-    { key = "current", label = "Current font", file = nil },
     { key = "default", label = "Default", file = "Fonts\\FRIZQT__.TTF" },
     { key = "arial", label = "Arial Narrow", file = "Fonts\\ARIALN.TTF" },
     { key = "morpheus", label = "Morpheus", file = "Fonts\\MORPHEUS.TTF" },
@@ -177,6 +178,11 @@ local function MigrateDatabase()
     db.createMissingTabs = true
     db.dockTabs = true
 
+    if db.appearance and (db.appearance.fontKey == "current" or not db.appearance.fontKey) then
+        db.appearance.fontKey = DEFAULTS.appearance.fontKey
+        db.appearance.fontFile = DEFAULTS.appearance.fontFile
+    end
+
     if db.tabs and db.tabs.raid then
         db.legacyRaidTabName = db.tabs.raid.name or "Raid"
         db.tabs.raid = nil
@@ -223,11 +229,21 @@ local function NormalizeFontFile(fontFile)
     return string.lower((fontFile or ""):gsub("/", "\\"))
 end
 
-local function GetFontOptionByKey(key)
+local function FindFontOptionByKey(key)
     for _, option in ipairs(FONT_OPTIONS) do
         if option.key == key then
             return option
         end
+    end
+
+    return nil
+end
+
+local function GetFontOptionByKey(key)
+    local option = FindFontOptionByKey(key)
+
+    if option then
+        return option
     end
 
     return FONT_OPTIONS[1]
@@ -262,23 +278,23 @@ local function GetSelectedFontFile()
         return option.file
     end
 
-    return appearance.fontFile or (STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF")
+    return appearance.fontFile or DEFAULTS.appearance.fontFile
 end
 
 local function GetSelectedFontLabel()
     local appearance = db and db.appearance
     local option = GetFontOptionByKey(appearance and appearance.fontKey)
 
-    if option and option.key ~= "current" then
+    if option then
         return option.label
     end
 
     if appearance and appearance.fontFile then
         local matched = GetFontOptionByFile(appearance.fontFile)
-        return matched and matched.label or "Current font"
+        return matched and matched.label or "Default"
     end
 
-    return "Current font"
+    return "Default"
 end
 
 local function NormalizeWindowName(name)
@@ -336,6 +352,32 @@ local function GetCurrentChatTabNames()
     return names
 end
 
+local function FormatCurrentTabsText(names)
+    if #names == 0 then
+        return "Current tabs:\nnone detected"
+    end
+
+    local lines = { "Current tabs:" }
+    local line = ""
+
+    for _, name in ipairs(names) do
+        local nextValue = line == "" and name or (line .. ", " .. name)
+
+        if line ~= "" and #nextValue > CURRENT_TABS_LINE_LIMIT then
+            lines[#lines + 1] = line
+            line = name
+        else
+            line = nextValue
+        end
+    end
+
+    if line ~= "" then
+        lines[#lines + 1] = line
+    end
+
+    return table.concat(lines, "\n")
+end
+
 local function GetAppearanceSampleFrame()
     if SELECTED_CHAT_FRAME and SELECTED_CHAT_FRAME.GetID then
         return SELECTED_CHAT_FRAME
@@ -378,7 +420,7 @@ local function SyncAppearanceFromCurrentTabs()
     db.appearance.fontFlags = fontFlags or db.appearance.fontFlags or ""
 
     local matchedFont = GetFontOptionByFile(fontFile)
-    db.appearance.fontKey = matchedFont and matchedFont.key or "current"
+    db.appearance.fontKey = matchedFont and matchedFont.key or DEFAULTS.appearance.fontKey
     db.appearance.fontSize = Clamp(savedFontSize or frameFontSize, 8, 24)
 end
 
@@ -693,11 +735,7 @@ local function RefreshCurrentTabsText()
 
     local names = GetCurrentChatTabNames()
 
-    if #names == 0 then
-        currentTabsText:SetText("Current tabs: none detected")
-    else
-        currentTabsText:SetText("Current tabs: " .. table.concat(names, ", "))
-    end
+    currentTabsText:SetText(FormatCurrentTabsText(names))
 end
 
 local function CloseManagedFrame(tab)
@@ -1020,6 +1058,7 @@ local function CreateColorPicker(parent, label, tooltip, getColor, setColor, anc
                 setColor(r, g, b, ColorPickerFrame.opacity or original.a)
             end
 
+            RefreshSwatch()
             addon:RefreshOptions()
         end
 
@@ -1065,12 +1104,15 @@ function CreateButton(parent, label, width, anchor, xOffset)
     return button
 end
 
-function addon:RefreshOptions()
+function addon:RefreshOptions(syncAppearance)
     if not optionsPanel or type(optionsPanel.refreshers) ~= "table" then
         return
     end
 
-    SyncAppearanceFromCurrentTabs()
+    if syncAppearance then
+        SyncAppearanceFromCurrentTabs()
+    end
+
     RefreshCurrentTabsText()
 
     for _, refresh in ipairs(optionsPanel.refreshers) do
@@ -1112,6 +1154,7 @@ local function BuildOptionsPanel(panel)
     panel.refreshers = {}
 
     local content = CreateOptionsContent(panel)
+    SyncAppearanceFromCurrentTabs()
 
     local title = CreateTitle(content, DISPLAY_NAME)
     local description = CreateDescription(content, "Global settings for automatically creating and maintaining managed chat tabs.", title)
@@ -1170,8 +1213,14 @@ local function BuildOptionsPanel(panel)
     currentTabsText = content:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     currentTabsText:SetPoint("TOPLEFT", appearanceTitle, "BOTTOMLEFT", 0, -8)
     currentTabsText:SetWidth(RIGHT_COLUMN_WIDTH)
+    currentTabsText:SetHeight(72)
     currentTabsText:SetJustifyH("LEFT")
+    currentTabsText:SetJustifyV("TOP")
     currentTabsText:SetWordWrap(true)
+
+    if currentTabsText.SetNonSpaceWrap then
+        currentTabsText:SetNonSpaceWrap(false)
+    end
 
     local applyAppearance = CreateCheckButton(content, "Apply visual settings live", "Apply the configured color, opacity, and font size to every current chat tab.", function()
         return db.appearance.enabled
@@ -1203,7 +1252,7 @@ local function BuildOptionsPanel(panel)
     end, COMPACT_SLIDER_WIDTH)
 
     local fontFace = CreateDropdown(content, "Font face", "Set the font face for all current chat tabs.", FONT_OPTIONS, function()
-        return db.appearance.fontKey or "current"
+        return db.appearance.fontKey or DEFAULTS.appearance.fontKey
     end, function(value)
         db.appearance.fontKey = value
 

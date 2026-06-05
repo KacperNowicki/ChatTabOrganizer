@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.10 - 2026-06-05
+
+- Removed the unused Current font dropdown option.
+- Wrapped the current chat tab list into short lines so names stay inside the settings panel.
+- Fixed color swatch refresh so picked colors are not overwritten by reading the selected chat tab again.
+
 ## 0.1.9 - 2026-06-05
 
 - Tightened the settings panel layout so appearance controls fit inside the AddOns options panel.

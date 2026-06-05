@@ -50,5 +50,5 @@ CurseForge automation can be added later after you have a CurseForge project ID 
 Attach the generated zip to a GitHub release. A good first tag is:
 
 ```text
-v0.1.9
+v0.1.10
 ```
