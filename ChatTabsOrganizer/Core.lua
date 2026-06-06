@@ -1020,23 +1020,22 @@ local function CreateColorPicker(parent, label, tooltip, getColor, setColor, anc
     button:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 4, yOffset or -14)
     button.tooltipText = tooltip
 
-    local swatch = button:CreateTexture(nil, "BACKGROUND")
-    swatch:SetAllPoints()
-    swatch:SetColorTexture(1, 1, 1, 1)
-    button.swatch = swatch
-
-    local border = button:CreateTexture(nil, "BORDER")
-    border:SetPoint("TOPLEFT", -1, 1)
-    border:SetPoint("BOTTOMRIGHT", 1, -1)
+    local border = button:CreateTexture(nil, "BACKGROUND")
+    border:SetAllPoints()
     border:SetColorTexture(0.75, 0.75, 0.75, 1)
-    border:SetDrawLayer("BORDER", -1)
+
+    local swatch = button:CreateTexture(nil, "ARTWORK")
+    swatch:SetPoint("TOPLEFT", 2, -2)
+    swatch:SetPoint("BOTTOMRIGHT", -2, 2)
+    swatch:SetColorTexture(0.02, 0.02, 0.02, 1)
+    button.swatch = swatch
 
     local text = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     text:SetPoint("LEFT", button, "RIGHT", 8, 0)
     text:SetText(label)
 
     local function RefreshSwatch()
-        local color = getColor()
+        local color = getColor() or DEFAULTS.appearance.background
         swatch:SetColorTexture(Clamp(color.r, 0, 1), Clamp(color.g, 0, 1), Clamp(color.b, 0, 1), 1)
     end
 

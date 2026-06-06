@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.11 - 2026-06-06
+
+- Fixed the background color swatch layer so the selected color is visible instead of being covered by the border.
+
 ## 0.1.10 - 2026-06-05
 
 - Removed the unused Current font dropdown option.
