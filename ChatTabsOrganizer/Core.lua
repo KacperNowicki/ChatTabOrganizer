@@ -632,17 +632,100 @@ local function GetChannelsForTab(tab)
     return channels
 end
 
+local function IsChannelJoined(channelName)
+    if not GetChannelName then
+        return false
+    end
+
+    local channelID, joinedName = GetChannelName(channelName)
+
+    return (type(channelID) == "number" and channelID > 0)
+        or (type(joinedName) == "string" and joinedName ~= "")
+end
+
+local function RequestChannelJoins(channels)
+    local requested = 0
+    local alreadyJoined = 0
+    local failed = 0
+
+    if type(channels) ~= "table" then
+        return requested, alreadyJoined, failed
+    end
+
+    if not JoinChannelByName then
+        return requested, alreadyJoined, #channels
+    end
+
+    for _, channelName in ipairs(channels) do
+        if IsChannelJoined(channelName) then
+            alreadyJoined = alreadyJoined + 1
+        elseif SafeCall(JoinChannelByName, channelName) then
+            requested = requested + 1
+        else
+            failed = failed + 1
+        end
+    end
+
+    return requested, alreadyJoined, failed
+end
+
 local function JoinMissingChannels(tab)
-    if not db.autoJoinChannels or type(tab.channels) ~= "table" or not JoinChannelByName or not GetChannelName then
+    if not db.autoJoinChannels or type(tab.channels) ~= "table" then
         return
     end
 
-    for _, channelName in ipairs(tab.channels) do
-        local _, joinedName = GetChannelName(channelName)
-        if not joinedName then
-            SafeCall(JoinChannelByName, channelName)
+    RequestChannelJoins(tab.channels)
+end
+
+local function GetSelectedNamedChannels()
+    local channels = {}
+
+    for _, key in ipairs(TAB_ORDER) do
+        local tab = db.tabs and db.tabs[key]
+
+        if tab and tab.enabled and type(tab.channels) == "table" then
+            for _, channelName in ipairs(tab.channels) do
+                AddChannelName(channels, channelName)
+            end
         end
     end
+
+    return channels
+end
+
+function addon:JoinSelectedChannels()
+    local channels = GetSelectedNamedChannels()
+
+    if #channels == 0 then
+        Print("no selected managed tabs include named channels.", true)
+        return
+    end
+
+    if not JoinChannelByName then
+        Print("channel joining is unavailable.", true)
+        return
+    end
+
+    local requested, alreadyJoined, failed = RequestChannelJoins(channels)
+    local parts = {}
+
+    if requested > 0 then
+        parts[#parts + 1] = "requested " .. requested
+    end
+
+    if alreadyJoined > 0 then
+        parts[#parts + 1] = alreadyJoined .. " already joined"
+    end
+
+    if failed > 0 then
+        parts[#parts + 1] = failed .. " failed"
+    end
+
+    if #parts == 0 then
+        parts[1] = "nothing to join"
+    end
+
+    Print("selected channels: " .. table.concat(parts, "; ") .. ".", true)
 end
 
 local function AddChannelToFrame(frame, channelName)
@@ -1174,11 +1257,17 @@ local function BuildOptionsPanel(panel)
         db.autoJoinChannels = value
     end, clearFilters, -4)
 
+    local joinChannels = CreateButton(content, "Join selected channels", 170, autoJoin, 0)
+    joinChannels.tooltipText = "Immediately join named channels belonging to enabled managed tabs."
+    joinChannels:SetScript("OnClick", function()
+        addon:JoinSelectedChannels()
+    end)
+
     local status = CreateCheckButton(content, "Show status messages", "Print a short confirmation when tabs are configured.", function()
         return db.statusMessages
     end, function(value)
         db.statusMessages = value
-    end, autoJoin, -4)
+    end, joinChannels, -4)
 
     local tabsTitle = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
     tabsTitle:SetPoint("TOPLEFT", status, "BOTTOMLEFT", 0, -18)

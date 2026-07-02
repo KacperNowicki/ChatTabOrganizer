@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.12 - 2026-07-02
+
+- Added a Join selected channels button that immediately requests named channels from enabled managed tabs.
+
 ## 0.1.11 - 2026-06-06
 
 - Fixed the background color swatch layer so the selected color is visible instead of being covered by the border.

@@ -22,6 +22,7 @@ When applied, the addon can:
 - route communities into Communities
 - route trade and services channels into Trade and Services
 - optionally manage whispers and local channels
+- immediately join named channels from enabled managed tabs with **Join selected channels**
 
 Visual settings are live and apply to all current chat tabs, including tabs the addon did not create. You can change:
 
@@ -30,7 +31,7 @@ Visual settings are live and apply to all current chat tabs, including tabs the 
 - font face
 - font size
 
-The addon only attempts to join named channels when **Auto-join named channels** is enabled.
+**Join selected channels** works immediately and does not change tabs or filters. **Auto-join named channels** instead attempts the same joins when you click **Apply Now**.
 
 ## Install
 
