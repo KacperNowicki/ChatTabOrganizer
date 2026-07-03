@@ -1,32 +1,65 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title description">
   <title id="title">Chat Tabs Organizer logo</title>
-  <desc id="description">A chat window with three colored tabs and neatly organized message rows.</desc>
+  <desc id="description">A dark chat window with green Guild, blue Group, pink Whispers, and yellow Say tabs and messages.</desc>
 
-  <rect width="1024" height="1024" rx="176" fill="#10151d"/>
-  <rect x="38" y="38" width="948" height="948" rx="144" fill="#18212b" stroke="#d9a62e" stroke-width="24"/>
+  <rect width="1024" height="1024" rx="170" fill="#10151d"/>
+  <rect x="34" y="34" width="956" height="956" rx="142" fill="#181f29" stroke="#68727e" stroke-width="18"/>
 
-  <path d="M180 270V196c0-31 25-56 56-56h146c31 0 56 25 56 56v74Z" fill="#39c5b6" stroke="#10151d" stroke-width="18"/>
-  <path d="M400 270V176c0-31 25-56 56-56h146c31 0 56 25 56 56v94Z" fill="#e5b83c" stroke="#10151d" stroke-width="18"/>
-  <path d="M620 270V196c0-31 25-56 56-56h112c31 0 56 25 56 56v74Z" fill="#ef6f61" stroke="#10151d" stroke-width="18"/>
+  <g stroke="#10151d" stroke-width="16" stroke-linejoin="round">
+    <path d="M86 244V160c0-30 24-54 54-54h152c30 0 54 24 54 54v84Z" fill="#38c968"/>
+    <path d="M324 244V136c0-30 24-54 54-54h152c30 0 54 24 54 54v108Z" fill="#4b9eff"/>
+    <path d="M562 244V160c0-30 24-54 54-54h174c30 0 54 24 54 54v84Z" fill="#ef72b4"/>
+    <path d="M822 244V176c0-30 24-54 54-54h18c30 0 54 24 54 54v68Z" fill="#f2c83b"/>
+  </g>
 
-  <rect x="126" y="250" width="772" height="626" rx="76" fill="#263340" stroke="#f2f4f5" stroke-width="20"/>
-  <path d="M126 338h772" fill="none" stroke="#d9a62e" stroke-width="18"/>
+  <g fill="#10151d" font-family="Arial, sans-serif" font-weight="700" text-anchor="middle">
+    <text x="216" y="186" font-size="42">GUILD</text>
+    <text x="454" y="172" font-size="40">GROUP</text>
+    <text x="703" y="186" font-size="34">WHISPERS</text>
+    <text x="884" y="196" font-size="36">SAY</text>
+  </g>
 
-  <path d="M220 408c0-32 26-58 58-58h468c32 0 58 26 58 58v268c0 32-26 58-58 58H548l-112 96 24-96H278c-32 0-58-26-58-58Z" fill="#f2f4f5"/>
+  <rect x="70" y="224" width="884" height="704" rx="66" fill="#d9dde1" stroke="#10151d" stroke-width="18"/>
+  <rect x="94" y="248" width="836" height="656" rx="44" fill="#2c2934"/>
+  <path d="M94 310h836" fill="none" stroke="#68727e" stroke-width="12"/>
 
-  <circle cx="312" cy="456" r="28" fill="#39c5b6"/>
-  <rect x="366" y="432" width="334" height="48" rx="24" fill="#263340"/>
+  <g fill="#a6afb8">
+    <rect x="126" y="270" width="34" height="16" rx="8"/>
+    <rect x="174" y="270" width="34" height="16" rx="8"/>
+    <rect x="222" y="270" width="34" height="16" rx="8"/>
+  </g>
 
-  <circle cx="312" cy="548" r="28" fill="#e5b83c"/>
-  <rect x="366" y="524" width="270" height="48" rx="24" fill="#263340"/>
+  <g font-family="Arial, sans-serif" font-weight="700">
+    <g transform="translate(0 0)">
+      <path d="M126 360c0-14 11-25 25-25h58c14 0 25 11 25 25v46c0 14-11 25-25 25h-26l-28 23 7-23h-11c-14 0-25-11-25-25Z" fill="#38c968"/>
+      <rect x="274" y="344" width="170" height="48" rx="24" fill="#38c968"/>
+      <text x="359" y="378" fill="#10151d" font-size="30" text-anchor="middle">GUILD</text>
+      <rect x="466" y="350" width="366" height="22" rx="11" fill="#f4f5f6"/>
+      <rect x="274" y="410" width="510" height="20" rx="10" fill="#9aa4ae"/>
+    </g>
 
-  <circle cx="312" cy="640" r="28" fill="#ef6f61"/>
-  <rect x="366" y="616" width="304" height="48" rx="24" fill="#263340"/>
+    <g transform="translate(0 132)">
+      <path d="M126 360c0-14 11-25 25-25h58c14 0 25 11 25 25v46c0 14-11 25-25 25h-26l-28 23 7-23h-11c-14 0-25-11-25-25Z" fill="#4b9eff"/>
+      <rect x="274" y="344" width="170" height="48" rx="24" fill="#4b9eff"/>
+      <text x="359" y="378" fill="#10151d" font-size="30" text-anchor="middle">GROUP</text>
+      <rect x="466" y="350" width="300" height="22" rx="11" fill="#f4f5f6"/>
+      <rect x="274" y="410" width="438" height="20" rx="10" fill="#9aa4ae"/>
+    </g>
 
-  <rect x="738" y="432" width="20" height="20" rx="10" fill="#8e9aa5"/>
-  <rect x="738" y="460" width="20" height="20" rx="10" fill="#8e9aa5"/>
-  <rect x="674" y="524" width="20" height="20" rx="10" fill="#8e9aa5"/>
-  <rect x="674" y="552" width="20" height="20" rx="10" fill="#8e9aa5"/>
-  <rect x="708" y="616" width="20" height="20" rx="10" fill="#8e9aa5"/>
-  <rect x="708" y="644" width="20" height="20" rx="10" fill="#8e9aa5"/>
+    <g transform="translate(0 264)">
+      <path d="M126 360c0-14 11-25 25-25h58c14 0 25 11 25 25v46c0 14-11 25-25 25h-26l-28 23 7-23h-11c-14 0-25-11-25-25Z" fill="#ef72b4"/>
+      <rect x="274" y="344" width="194" height="48" rx="24" fill="#ef72b4"/>
+      <text x="371" y="378" fill="#10151d" font-size="27" text-anchor="middle">WHISPER</text>
+      <rect x="490" y="350" width="342" height="22" rx="11" fill="#f4f5f6"/>
+      <rect x="274" y="410" width="476" height="20" rx="10" fill="#9aa4ae"/>
+    </g>
+
+    <g transform="translate(0 396)">
+      <path d="M126 360c0-14 11-25 25-25h58c14 0 25 11 25 25v46c0 14-11 25-25 25h-26l-28 23 7-23h-11c-14 0-25-11-25-25Z" fill="#f2c83b"/>
+      <rect x="274" y="344" width="136" height="48" rx="24" fill="#f2c83b"/>
+      <text x="342" y="378" fill="#10151d" font-size="30" text-anchor="middle">SAY</text>
+      <rect x="432" y="350" width="400" height="22" rx="11" fill="#f4f5f6"/>
+      <rect x="274" y="410" width="536" height="20" rx="10" fill="#9aa4ae"/>
+    </g>
+  </g>
 </svg>
