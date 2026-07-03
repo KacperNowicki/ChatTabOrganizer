@@ -1,5 +1,9 @@
 # Chat Tabs Organizer
 
+<p align="center">
+  <img src="assets/chat-tabs-organizer-logo.svg" alt="Chat Tabs Organizer logo" width="180">
+</p>
+
 Chat Tabs Organizer is a World of Warcraft Retail addon that helps keep chat windows separated by purpose: guild, party/raid, communities, trade/services, whispers, and local channels.
 
 ## How It Works

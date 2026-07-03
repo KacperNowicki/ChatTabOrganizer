@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title description">
+  <title id="title">Chat Tabs Organizer logo</title>
+  <desc id="description">A chat window with three colored tabs and neatly organized message rows.</desc>
+
+  <rect width="1024" height="1024" rx="176" fill="#10151d"/>
+  <rect x="38" y="38" width="948" height="948" rx="144" fill="#18212b" stroke="#d9a62e" stroke-width="24"/>
+
+  <path d="M180 270V196c0-31 25-56 56-56h146c31 0 56 25 56 56v74Z" fill="#39c5b6" stroke="#10151d" stroke-width="18"/>
+  <path d="M400 270V176c0-31 25-56 56-56h146c31 0 56 25 56 56v94Z" fill="#e5b83c" stroke="#10151d" stroke-width="18"/>
+  <path d="M620 270V196c0-31 25-56 56-56h112c31 0 56 25 56 56v74Z" fill="#ef6f61" stroke="#10151d" stroke-width="18"/>
+
+  <rect x="126" y="250" width="772" height="626" rx="76" fill="#263340" stroke="#f2f4f5" stroke-width="20"/>
+  <path d="M126 338h772" fill="none" stroke="#d9a62e" stroke-width="18"/>
+
+  <path d="M220 408c0-32 26-58 58-58h468c32 0 58 26 58 58v268c0 32-26 58-58 58H548l-112 96 24-96H278c-32 0-58-26-58-58Z" fill="#f2f4f5"/>
+
+  <circle cx="312" cy="456" r="28" fill="#39c5b6"/>
+  <rect x="366" y="432" width="334" height="48" rx="24" fill="#263340"/>
+
+  <circle cx="312" cy="548" r="28" fill="#e5b83c"/>
+  <rect x="366" y="524" width="270" height="48" rx="24" fill="#263340"/>
+
+  <circle cx="312" cy="640" r="28" fill="#ef6f61"/>
+  <rect x="366" y="616" width="304" height="48" rx="24" fill="#263340"/>
+
+  <rect x="738" y="432" width="20" height="20" rx="10" fill="#8e9aa5"/>
+  <rect x="738" y="460" width="20" height="20" rx="10" fill="#8e9aa5"/>
+  <rect x="674" y="524" width="20" height="20" rx="10" fill="#8e9aa5"/>
+  <rect x="674" y="552" width="20" height="20" rx="10" fill="#8e9aa5"/>
+  <rect x="708" y="616" width="20" height="20" rx="10" fill="#8e9aa5"/>
+  <rect x="708" y="644" width="20" height="20" rx="10" fill="#8e9aa5"/>
+</svg>
