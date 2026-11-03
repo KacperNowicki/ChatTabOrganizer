@@ -1,8 +1,10 @@
-## Interface: 120005
+## Interface: 120105
 ## Title: Chat Tabs Organizer
 ## Notes: Create focused chat tabs and apply live visual settings to all chat windows.
 ## Author: Chat Tabs Organizer contributors
-## Version: 0.1.12
+## Version: 0.2.0
 ## SavedVariables: ChatTabsOrganizerDB
+## SavedVariablesPerCharacter: ChatTabsOrganizerCharDB
 
 Core.lua
+Options.lua

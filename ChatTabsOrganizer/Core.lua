@@ -1,22 +1,101 @@
 local ADDON_NAME, addon = ...
-addon = addon or {}
 
 local DISPLAY_NAME = "Chat Tabs Organizer"
 local COMMAND = "/ctabs"
+local DB_VERSION = 7
+local MAX_TABS = 10
+local LOGIN_APPLY_DELAY = 2
+local CHANNEL_REFRESH_DELAY = 1.5
+
+addon.DISPLAY_NAME = DISPLAY_NAME
+addon.COMMAND = COMMAND
+addon.MAX_TABS = MAX_TABS
+
+addon.FONT_OPTIONS = {
+    { key = "default", label = "Default", file = "Fonts\\FRIZQT__.TTF" },
+    { key = "arial", label = "Arial Narrow", file = "Fonts\\ARIALN.TTF" },
+    { key = "morpheus", label = "Morpheus", file = "Fonts\\MORPHEUS.TTF" },
+    { key = "skurri", label = "Skurri", file = "Fonts\\SKURRI.TTF" },
+}
+
+-- Message types offered in the tab editor. Each maps to one or more ChatTypeGroup keys.
+-- Types whose groups don't exist in the running client are hidden automatically.
+addon.MESSAGE_TYPES = {
+    { key = "say", label = "Say", groups = { "SAY" } },
+    { key = "yell", label = "Yell", groups = { "YELL" } },
+    { key = "emote", label = "Emotes", groups = { "EMOTE" } },
+    { key = "guild", label = "Guild", groups = { "GUILD" } },
+    { key = "officer", label = "Officer", groups = { "OFFICER" } },
+    { key = "guildAchievement", label = "Guild achievements", groups = { "GUILD_ACHIEVEMENT" } },
+    { key = "guildDiscord", label = "Guild Discord", groups = { "GUILD_DISCORD" } },
+    { key = "party", label = "Party", groups = { "PARTY", "PARTY_LEADER" } },
+    { key = "raid", label = "Raid", groups = { "RAID", "RAID_LEADER", "RAID_WARNING" } },
+    { key = "instance", label = "Instance", groups = { "INSTANCE_CHAT", "INSTANCE_CHAT_LEADER" } },
+    { key = "whisper", label = "Whispers", groups = { "WHISPER" } },
+    { key = "bnWhisper", label = "Battle.net whispers", groups = { "BN_WHISPER" } },
+    { key = "communities", label = "Communities", groups = { "COMMUNITIES_CHANNEL" } },
+    { key = "achievement", label = "Achievements", groups = { "ACHIEVEMENT" } },
+    { key = "loot", label = "Loot", groups = { "LOOT" } },
+    { key = "currency", label = "Currency", groups = { "CURRENCY" } },
+    { key = "money", label = "Money", groups = { "MONEY" } },
+    { key = "tradeskills", label = "Professions", groups = { "TRADESKILLS" } },
+    { key = "system", label = "System", groups = { "SYSTEM" } },
+    { key = "errors", label = "Errors", groups = { "ERRORS" } },
+}
+
+local DEFAULT_TAB_ORDER = { "guild", "party", "communities", "trade", "whispers", "localChannels" }
+
+local DEFAULT_TABS = {
+    guild = {
+        enabled = true,
+        name = "Guild",
+        groups = { "GUILD", "OFFICER", "GUILD_ACHIEVEMENT" },
+        channels = {},
+    },
+    party = {
+        enabled = true,
+        name = "Party",
+        groups = { "PARTY", "PARTY_LEADER", "RAID", "RAID_LEADER", "RAID_WARNING", "INSTANCE_CHAT", "INSTANCE_CHAT_LEADER" },
+        channels = {},
+    },
+    communities = {
+        enabled = true,
+        name = "Communities",
+        groups = { "COMMUNITIES_CHANNEL" },
+        channels = {},
+    },
+    trade = {
+        enabled = true,
+        name = "Trade",
+        groups = {},
+        channels = { "Trade", "Services" },
+    },
+    whispers = {
+        enabled = false,
+        name = "Whispers",
+        groups = { "WHISPER", "BN_WHISPER" },
+        channels = {},
+    },
+    localChannels = {
+        enabled = false,
+        name = "Local",
+        groups = {},
+        channels = { "General", "LocalDefense", "LookingForGroup" },
+    },
+}
 
 local DEFAULTS = {
-    version = 6,
     enabled = true,
-    createMissingTabs = true,
+    autoApply = true,
     dockTabs = true,
     clearManagedFilters = true,
+    removeFromMainTab = false,
     autoJoinChannels = false,
     statusMessages = true,
+    nextCustomId = 1,
     appearance = {
         enabled = true,
-        applyToAllTabs = true,
         fontKey = "default",
-        fontFile = "Fonts\\FRIZQT__.TTF",
         fontSize = 14,
         background = {
             r = 0.02,
@@ -25,81 +104,20 @@ local DEFAULTS = {
             alpha = 0.35,
         },
     },
-    tabs = {
-        guild = {
-            enabled = true,
-            name = "Guild",
-            groups = { "GUILD", "OFFICER", "GUILD_ACHIEVEMENT" },
-        },
-        party = {
-            enabled = true,
-            name = "Party",
-            groups = { "PARTY", "PARTY_LEADER", "RAID", "RAID_LEADER", "RAID_WARNING", "INSTANCE_CHAT", "INSTANCE_CHAT_LEADER" },
-        },
-        communities = {
-            enabled = true,
-            name = "Communities",
-            groups = { "COMMUNITIES" },
-        },
-        trade = {
-            enabled = true,
-            name = "Trade",
-            groups = { "CHANNEL" },
-            channels = { "Trade", "Services" },
-            channelPatterns = { "Trade", "Services" },
-        },
-        whispers = {
-            enabled = false,
-            name = "Whispers",
-            groups = { "WHISPER", "BN_WHISPER" },
-        },
-        localChannels = {
-            enabled = false,
-            name = "Local",
-            groups = { "CHANNEL" },
-            channels = { "General", "LocalDefense", "LookingForGroup" },
-            channelPatterns = { "General", "LocalDefense", "LookingForGroup" },
-        },
-    },
 }
 
-local TAB_ORDER = {
-    "guild",
-    "party",
-    "communities",
-    "trade",
-    "whispers",
-    "localChannels",
-}
-
-local TAB_LABELS = {
-    guild = "Guild",
-    party = "Party",
-    communities = "Communities",
-    trade = "Trade and Services",
-    whispers = "Whispers",
-    localChannels = "Local channels",
-}
+addon.DEFAULTS = DEFAULTS
 
 local db
-local optionsPanel
-local settingsCategory
-local controlIndex = 0
-local currentTabsText
+local charDB
+local eventFrame = CreateFrame("Frame")
+local pendingApply
+local channelRefreshQueued = false
+local loginApplied = false
 
-local PANEL_MIN_WIDTH = 700
-local RIGHT_COLUMN_OFFSET = 360
-local RIGHT_COLUMN_WIDTH = 300
-local COMPACT_SLIDER_WIDTH = 210
-local COMPACT_DROPDOWN_WIDTH = 165
-local CURRENT_TABS_LINE_LIMIT = 34
-
-local FONT_OPTIONS = {
-    { key = "default", label = "Default", file = "Fonts\\FRIZQT__.TTF" },
-    { key = "arial", label = "Arial Narrow", file = "Fonts\\ARIALN.TTF" },
-    { key = "morpheus", label = "Morpheus", file = "Fonts\\MORPHEUS.TTF" },
-    { key = "skurri", label = "Skurri", file = "Fonts\\SKURRI.TTF" },
-}
+---------------------------------------------------------------------------
+-- Utilities
+---------------------------------------------------------------------------
 
 local function Clamp(value, minValue, maxValue)
     value = tonumber(value) or minValue
@@ -113,16 +131,31 @@ local function Clamp(value, minValue, maxValue)
     return value
 end
 
-local function Round(value, decimals)
-    local multiplier = 10 ^ (decimals or 0)
-    return math.floor((value * multiplier) + 0.5) / multiplier
+local function Trim(value)
+    return (tostring(value or "")):match("^%s*(.-)%s*$")
 end
 
-local function CopyDefaults(source, target)
-    if type(source) ~= "table" then
-        return target
+local function Lower(value)
+    return string.lower(Trim(value))
+end
+
+local function DeepCopy(value)
+    if type(value) ~= "table" then
+        return value
     end
 
+    local copy = {}
+
+    for key, inner in pairs(value) do
+        copy[key] = DeepCopy(inner)
+    end
+
+    return copy
+end
+
+-- Fills in missing keys only. Not used for tabs: array merging by index would
+-- resurrect entries the user removed.
+local function CopyDefaults(source, target)
     if type(target) ~= "table" then
         target = {}
     end
@@ -138,63 +171,57 @@ local function CopyDefaults(source, target)
     return target
 end
 
-local function CopyArray(source)
-    local target = {}
-
-    if type(source) ~= "table" then
-        return target
-    end
-
-    for index, value in ipairs(source) do
-        target[index] = value
-    end
-
-    return target
-end
-
-local function MigrateDatabase()
-    if not db then
-        return
-    end
-
-    local oldVersion = tonumber(db.version) or 0
-
-    if oldVersion >= DEFAULTS.version then
-        db.enabled = true
-        db.createMissingTabs = true
-        db.dockTabs = true
-        return
-    end
-
-    for key, defaults in pairs(DEFAULTS.tabs) do
-        if db.tabs and db.tabs[key] then
-            db.tabs[key].groups = CopyArray(defaults.groups)
-            db.tabs[key].channels = CopyArray(defaults.channels)
-            db.tabs[key].channelPatterns = CopyArray(defaults.channelPatterns)
+local function IndexOf(list, value)
+    for index, item in ipairs(list) do
+        if item == value then
+            return index
         end
     end
 
-    db.enabled = true
-    db.createMissingTabs = true
-    db.dockTabs = true
-
-    if db.appearance and (db.appearance.fontKey == "current" or not db.appearance.fontKey) then
-        db.appearance.fontKey = DEFAULTS.appearance.fontKey
-        db.appearance.fontFile = DEFAULTS.appearance.fontFile
-    end
-
-    if db.tabs and db.tabs.raid then
-        db.legacyRaidTabName = db.tabs.raid.name or "Raid"
-        db.tabs.raid = nil
-    end
-
-    db.version = DEFAULTS.version
+    return nil
 end
 
-local function ResetDatabase()
-    ChatTabsOrganizerDB = CopyDefaults(DEFAULTS, {})
-    db = ChatTabsOrganizerDB
-    addon.db = db
+local function IndexOfInsensitive(list, value)
+    local wanted = Lower(value)
+
+    for index, item in ipairs(list) do
+        if Lower(item) == wanted then
+            return index
+        end
+    end
+
+    return nil
+end
+
+local function AddUnique(list, value)
+    value = Trim(value)
+
+    if value ~= "" and not IndexOfInsensitive(list, value) then
+        list[#list + 1] = value
+    end
+end
+
+local function SafeCall(func, ...)
+    if type(func) ~= "function" then
+        return false
+    end
+
+    return pcall(func, ...)
+end
+
+local function FrameCall(frame, method, ...)
+    local func = frame and frame[method]
+
+    if type(func) ~= "function" then
+        return false
+    end
+
+    return pcall(func, frame, ...)
+end
+
+local function FrameHas(frame, method, value)
+    local ok, result = FrameCall(frame, method, value)
+    return ok and result and true or false
 end
 
 local function Print(message, force)
@@ -207,229 +234,289 @@ local function Print(message, force)
     end
 end
 
-local function SafeCall(func, ...)
-    if type(func) ~= "function" then
-        return false
+addon.Print = Print
+addon.Trim = Trim
+addon.Clamp = Clamp
+
+---------------------------------------------------------------------------
+-- Saved variables
+---------------------------------------------------------------------------
+
+local function NewTab(source)
+    return {
+        enabled = source.enabled and true or false,
+        name = source.name,
+        groups = DeepCopy(source.groups or {}),
+        channels = DeepCopy(source.channels or {}),
+    }
+end
+
+local function MigrateDatabase()
+    local oldVersion = tonumber(db.version) or 0
+
+    if oldVersion >= DB_VERSION then
+        return
     end
 
-    return pcall(func, ...)
-end
+    if type(db.tabs) == "table" then
+        if db.tabs.raid then
+            db.legacyRaidTabName = db.tabs.raid.name or "Raid"
+            db.tabs.raid = nil
+        end
 
-local ClearFrameFilters
+        for _, tab in pairs(db.tabs) do
+            if type(tab) == "table" then
+                local groups = {}
 
-local function Trim(value)
-    return (value or ""):match("^%s*(.-)%s*$")
-end
+                for _, group in ipairs(tab.groups or {}) do
+                    -- 0.1.x used a group name that doesn't exist, so the Communities tab was always empty.
+                    if group == "COMMUNITIES" then
+                        group = "COMMUNITIES_CHANNEL"
+                    end
 
-local function LowerCommand(value)
-    return string.lower(Trim(value))
-end
+                    -- CHANNEL is now added automatically for tabs that list channels.
+                    if group ~= "CHANNEL" then
+                        AddUnique(groups, group)
+                    end
+                end
 
-local function NormalizeFontFile(fontFile)
-    return string.lower((fontFile or ""):gsub("/", "\\"))
-end
+                local channels = {}
 
-local function FindFontOptionByKey(key)
-    for _, option in ipairs(FONT_OPTIONS) do
-        if option.key == key then
-            return option
+                for _, channel in ipairs(tab.channels or {}) do
+                    AddUnique(channels, channel)
+                end
+
+                for _, channel in ipairs(tab.channelPatterns or {}) do
+                    AddUnique(channels, channel)
+                end
+
+                tab.groups = groups
+                tab.channels = channels
+                tab.channelPatterns = nil
+            end
         end
     end
 
-    return nil
-end
+    db.createMissingTabs = nil
 
-local function GetFontOptionByKey(key)
-    local option = FindFontOptionByKey(key)
+    if type(db.appearance) == "table" then
+        if db.appearance.fontKey == "current" then
+            db.appearance.fontKey = DEFAULTS.appearance.fontKey
+        end
 
-    if option then
-        return option
+        db.appearance.fontFile = nil
+        db.appearance.fontFlags = nil
+        db.appearance.applyToAllTabs = nil
     end
 
-    return FONT_OPTIONS[1]
+    db.version = DB_VERSION
 end
 
-local function GetFontOptionByFile(fontFile)
-    local normalized = NormalizeFontFile(fontFile)
+local function EnsureStructure()
+    CopyDefaults(DEFAULTS, db)
+    db.version = DB_VERSION
 
-    if normalized == "" then
-        return nil
+    if type(db.tabs) ~= "table" then
+        db.tabs = {}
     end
 
-    for _, option in ipairs(FONT_OPTIONS) do
-        if option.file and NormalizeFontFile(option.file) == normalized then
-            return option
+    for key, defaults in pairs(DEFAULT_TABS) do
+        if type(db.tabs[key]) ~= "table" then
+            db.tabs[key] = NewTab(defaults)
         end
     end
 
-    return nil
-end
-
-local function GetSelectedFontFile()
-    local appearance = db and db.appearance
-
-    if not appearance then
-        return nil
-    end
-
-    local option = GetFontOptionByKey(appearance.fontKey)
-
-    if option and option.file then
-        return option.file
-    end
-
-    return appearance.fontFile or DEFAULTS.appearance.fontFile
-end
-
-local function GetSelectedFontLabel()
-    local appearance = db and db.appearance
-    local option = GetFontOptionByKey(appearance and appearance.fontKey)
-
-    if option then
-        return option.label
-    end
-
-    if appearance and appearance.fontFile then
-        local matched = GetFontOptionByFile(appearance.fontFile)
-        return matched and matched.label or "Default"
-    end
-
-    return "Default"
-end
-
-local function NormalizeWindowName(name)
-    return LowerCommand(name)
-end
-
-local function GetChatFramesByName(name)
-    local frames = {}
-
-    if not name or not NUM_CHAT_WINDOWS then
-        return frames
-    end
-
-    local expectedName = NormalizeWindowName(name)
-
-    for index = 1, NUM_CHAT_WINDOWS do
-        local frame = _G["ChatFrame" .. index]
-        local windowName = GetChatWindowInfo(index)
-
-        if frame and NormalizeWindowName(windowName) == expectedName then
-            frames[#frames + 1] = frame
-        end
-    end
-
-    return frames
-end
-
-local function GetCurrentChatFrames()
-    local frames = {}
-
-    if not NUM_CHAT_WINDOWS then
-        return frames
-    end
-
-    for index = 1, NUM_CHAT_WINDOWS do
-        local frame = _G["ChatFrame" .. index]
-        local name = GetChatWindowInfo(index)
-
-        if frame and name and name ~= "" then
-            frames[#frames + 1] = frame
-        end
-    end
-
-    return frames
-end
-
-local function GetCurrentChatTabNames()
-    local names = {}
-
-    for _, frame in ipairs(GetCurrentChatFrames()) do
-        local name = GetChatWindowInfo(frame:GetID())
-        names[#names + 1] = name
-    end
-
-    return names
-end
-
-local function FormatCurrentTabsText(names)
-    if #names == 0 then
-        return "Current tabs:\nnone detected"
-    end
-
-    local lines = { "Current tabs:" }
-    local line = ""
-
-    for _, name in ipairs(names) do
-        local nextValue = line == "" and name or (line .. ", " .. name)
-
-        if line ~= "" and #nextValue > CURRENT_TABS_LINE_LIMIT then
-            lines[#lines + 1] = line
-            line = name
+    for key, tab in pairs(db.tabs) do
+        if type(tab) ~= "table" then
+            db.tabs[key] = nil
         else
-            line = nextValue
+            tab.name = Trim(tab.name)
+
+            if tab.name == "" then
+                tab.name = (DEFAULT_TABS[key] and DEFAULT_TABS[key].name) or key
+            end
+
+            tab.enabled = tab.enabled and true or false
+            tab.groups = type(tab.groups) == "table" and tab.groups or {}
+            tab.channels = type(tab.channels) == "table" and tab.channels or {}
         end
     end
 
-    if line ~= "" then
-        lines[#lines + 1] = line
+    -- Rebuild the order: keep valid known keys, then append anything missing.
+    local order = {}
+    local seen = {}
+
+    if type(db.tabOrder) == "table" then
+        for _, key in ipairs(db.tabOrder) do
+            if db.tabs[key] and not seen[key] then
+                order[#order + 1] = key
+                seen[key] = true
+            end
+        end
     end
 
-    return table.concat(lines, "\n")
+    for _, key in ipairs(DEFAULT_TAB_ORDER) do
+        if db.tabs[key] and not seen[key] then
+            order[#order + 1] = key
+            seen[key] = true
+        end
+    end
+
+    local extras = {}
+
+    for key in pairs(db.tabs) do
+        if not seen[key] then
+            extras[#extras + 1] = key
+        end
+    end
+
+    table.sort(extras)
+
+    for _, key in ipairs(extras) do
+        order[#order + 1] = key
+    end
+
+    db.tabOrder = order
 end
 
-local function GetAppearanceSampleFrame()
-    if SELECTED_CHAT_FRAME and SELECTED_CHAT_FRAME.GetID then
-        return SELECTED_CHAT_FRAME
+local function EnsureCharStructure()
+    if type(charDB.owned) ~= "table" then
+        charDB.owned = {}
     end
 
-    return GetCurrentChatFrames()[1]
+    if type(charDB.mainRemoved) ~= "table" then
+        charDB.mainRemoved = {}
+    end
+
+    if type(charDB.mainRemoved.groups) ~= "table" then
+        charDB.mainRemoved.groups = {}
+    end
+
+    if type(charDB.mainRemoved.channels) ~= "table" then
+        charDB.mainRemoved.channels = {}
+    end
 end
 
-local function SyncAppearanceFromCurrentTabs()
-    if not db or not db.appearance then
-        return
+---------------------------------------------------------------------------
+-- Chat windows
+---------------------------------------------------------------------------
+
+local function NumChatWindows()
+    if NUM_CHAT_WINDOWS then
+        return NUM_CHAT_WINDOWS
     end
 
-    local frame = GetAppearanceSampleFrame()
+    if Constants and Constants.ChatFrameConstants and Constants.ChatFrameConstants.MaxChatWindows then
+        return Constants.ChatFrameConstants.MaxChatWindows
+    end
 
+    return 10
+end
+
+local function NumReservedWindows()
+    if C_ChatInfo and C_ChatInfo.GetNumReservedChatWindows then
+        local ok, count = pcall(C_ChatInfo.GetNumReservedChatWindows)
+
+        if ok and type(count) == "number" then
+            return count
+        end
+    end
+
+    return 2
+end
+
+local function GetWindowName(id)
+    local name = GetChatWindowInfo(id)
+    return Trim(name)
+end
+
+-- The main chat window and Combat Log are never created, renamed or closed by this addon.
+local function IsReservedFrame(frame)
     if not frame or not frame.GetID then
-        return
+        return true
     end
 
-    local _, savedFontSize, r, g, b, alpha = GetChatWindowInfo(frame:GetID())
-    local fontFile, frameFontSize, fontFlags
-
-    if frame.GetFont then
-        fontFile, frameFontSize, fontFlags = frame:GetFont()
-    end
-
-    local background = db.appearance.background
-
-    if type(background) ~= "table" then
-        background = {}
-        db.appearance.background = background
-    end
-
-    background.r = Clamp(r, 0, 1)
-    background.g = Clamp(g, 0, 1)
-    background.b = Clamp(b, 0, 1)
-    background.alpha = Clamp(alpha, 0, 1)
-
-    db.appearance.fontFile = fontFile or db.appearance.fontFile
-    db.appearance.fontFlags = fontFlags or db.appearance.fontFlags or ""
-
-    local matchedFont = GetFontOptionByFile(fontFile)
-    db.appearance.fontKey = matchedFont and matchedFont.key or DEFAULTS.appearance.fontKey
-    db.appearance.fontSize = Clamp(savedFontSize or frameFontSize, 8, 24)
+    return frame == DEFAULT_CHAT_FRAME
+        or frame == COMBATLOG
+        or frame:GetID() <= NumReservedWindows()
 end
 
-local function GetChatFrameByName(name)
-    return GetChatFramesByName(name)[1]
+-- FCF_Close only hides a window and keeps its name, so a name match alone
+-- doesn't mean the window is open.
+local function IsWindowActive(id)
+    if FCF_IsChatWindowIndexActive then
+        local ok, active = pcall(FCF_IsChatWindowIndexActive, id)
+
+        if ok then
+            return active and true or false
+        end
+    end
+
+    local shown = select(7, GetChatWindowInfo(id))
+
+    if shown then
+        return true
+    end
+
+    local frame = _G["ChatFrame" .. id]
+    return frame and frame.isDocked and true or false
+end
+
+local function GetActiveFrames()
+    local frames = {}
+
+    for id = 1, NumChatWindows() do
+        local frame = _G["ChatFrame" .. id]
+
+        if frame and GetWindowName(id) ~= "" and IsWindowActive(id) then
+            frames[#frames + 1] = frame
+        end
+    end
+
+    return frames
+end
+
+-- Numbered windows plus any open temporary (whisper) windows.
+local function GetStylableFrames()
+    local frames = GetActiveFrames()
+
+    if type(CHAT_FRAMES) == "table" then
+        for _, frameName in ipairs(CHAT_FRAMES) do
+            local frame = _G[frameName]
+
+            if frame and frame.isTemporary and frame.inUse ~= false and not IndexOf(frames, frame) then
+                frames[#frames + 1] = frame
+            end
+        end
+    end
+
+    return frames
+end
+
+local function FindFramesByName(name)
+    local frames = {}
+    local wanted = Lower(name)
+
+    if wanted == "" then
+        return frames
+    end
+
+    for _, frame in ipairs(GetActiveFrames()) do
+        if not IsReservedFrame(frame) and Lower(GetWindowName(frame:GetID())) == wanted then
+            frames[#frames + 1] = frame
+        end
+    end
+
+    return frames
+end
+
+local function ClearFrameFilters(frame)
+    FrameCall(frame, "RemoveAllMessageGroups")
+    FrameCall(frame, "RemoveAllChannels")
 end
 
 local function CloseChatFrame(frame)
-    if not frame or not frame.GetID then
+    if not frame or IsReservedFrame(frame) then
         return false
     end
 
@@ -437,130 +524,196 @@ local function CloseChatFrame(frame)
         return true
     end
 
-    local frameID = frame:GetID()
-
     ClearFrameFilters(frame)
 
     if SetChatWindowShown then
-        SafeCall(SetChatWindowShown, frameID, false)
+        SafeCall(SetChatWindowShown, frame:GetID(), false)
     end
 
-    if frame.Hide then
-        SafeCall(frame.Hide, frame)
-    end
+    FrameCall(frame, "Hide")
 
-    local tabFrame = _G["ChatFrame" .. frameID .. "Tab"]
-    if tabFrame and tabFrame.Hide then
-        SafeCall(tabFrame.Hide, tabFrame)
-    end
+    local tabFrame = _G["ChatFrame" .. frame:GetID() .. "Tab"]
+    FrameCall(tabFrame, "Hide")
 
     return true
 end
 
-local function EnsureChatFrame(tab)
-    local frames = GetChatFramesByName(tab.name)
-    local frame = frames[1]
+-- Returns the window this addon created or adopted for a tab, if it is still
+-- open and still carries the name we gave it. The name check stops us from
+-- touching a window the user opened later in the same slot.
+local function GetOwnedFrame(key)
+    local owned = charDB.owned[key]
 
-    if not frame and db.createMissingTabs and FCF_OpenNewWindow then
-        frame = FCF_OpenNewWindow(tab.name, true)
-        frame = frame or GetChatFrameByName(tab.name)
+    if type(owned) ~= "table" or type(owned.id) ~= "number" then
+        charDB.owned[key] = nil
+        return nil
+    end
+
+    local frame = _G["ChatFrame" .. owned.id]
+
+    if frame
+        and not IsReservedFrame(frame)
+        and IsWindowActive(owned.id)
+        and Lower(GetWindowName(owned.id)) == Lower(owned.name)
+    then
+        return frame
+    end
+
+    charDB.owned[key] = nil
+    return nil
+end
+
+local function SetOwnedFrame(key, frame, name)
+    charDB.owned[key] = { id = frame:GetID(), name = name }
+end
+
+local function IsOwnedByOtherTab(frame, key)
+    for otherKey, owned in pairs(charDB.owned) do
+        if otherKey ~= key and type(owned) == "table" and owned.id == frame:GetID() then
+            return true
+        end
+    end
+
+    return false
+end
+
+local function CloseOwnedFrame(key)
+    local frame = GetOwnedFrame(key)
+    charDB.owned[key] = nil
+
+    if frame and CloseChatFrame(frame) then
+        return 1
+    end
+
+    return 0
+end
+
+local function CloseFramesNamed(name)
+    local closed = 0
+
+    for _, frame in ipairs(FindFramesByName(name)) do
+        if CloseChatFrame(frame) then
+            closed = closed + 1
+        end
+    end
+
+    return closed
+end
+
+-- Finds (or creates, unless findOnly) the window for a tab.
+-- Returns frame, created, duplicatesClosed.
+local function EnsureChatFrame(key, tab, findOnly)
+    local frame = GetOwnedFrame(key)
+    local sameName = FindFramesByName(tab.name)
+
+    if not frame then
+        for _, candidate in ipairs(sameName) do
+            if not IsOwnedByOtherTab(candidate, key) then
+                frame = candidate
+                break
+            end
+        end
+    end
+
+    if findOnly then
+        return frame, false, 0
+    end
+
+    local created = false
+
+    if not frame and FCF_OpenNewWindow then
+        local ok, newFrame = pcall(FCF_OpenNewWindow, tab.name, true)
+
+        if ok and type(newFrame) == "table" and newFrame.GetID then
+            frame = newFrame
+        else
+            frame = FindFramesByName(tab.name)[1]
+        end
+
+        created = frame ~= nil
     end
 
     if not frame then
-        return nil, 0
+        return nil, false, 0
     end
 
-    local duplicatesRemoved = 0
-
-    for index = 2, #frames do
-        if CloseChatFrame(frames[index]) then
-            duplicatesRemoved = duplicatesRemoved + 1
+    if Trim(GetWindowName(frame:GetID())) ~= tab.name then
+        if FCF_SetWindowName then
+            SafeCall(FCF_SetWindowName, frame, tab.name)
+        elseif SetChatWindowName then
+            SafeCall(SetChatWindowName, frame:GetID(), tab.name)
         end
     end
 
-    if FCF_SetWindowName then
-        SafeCall(FCF_SetWindowName, frame, tab.name)
-    elseif SetChatWindowName and frame.GetID then
-        SafeCall(SetChatWindowName, frame:GetID(), tab.name)
-    end
+    SetOwnedFrame(key, frame, tab.name)
 
-    if db.dockTabs and FCF_DockFrame then
-        if not SafeCall(FCF_DockFrame, frame, frame:GetID()) then
-            SafeCall(FCF_DockFrame, frame)
+    local duplicatesClosed = 0
+
+    for _, other in ipairs(sameName) do
+        if other ~= frame and not IsOwnedByOtherTab(other, key) and CloseChatFrame(other) then
+            duplicatesClosed = duplicatesClosed + 1
         end
     end
 
-    return frame, duplicatesRemoved
+    return frame, created, duplicatesClosed
 end
 
-local function RemoveAllChannels(frame)
-    if frame and frame.RemoveAllChannels then
-        SafeCall(frame.RemoveAllChannels, frame)
+-- Keeps managed tabs docked, in the configured order, after the user's own tabs.
+local function OrderDock(frames)
+    if #frames == 0 or not FCF_DockFrame or not GENERAL_CHAT_DOCK then
         return
     end
 
-    if ChatFrame_RemoveAllChannels then
-        SafeCall(ChatFrame_RemoveAllChannels, frame)
-        return
-    end
+    local docked = GENERAL_CHAT_DOCK.DOCKED_CHAT_FRAMES
 
-    if not ChatFrame_RemoveChannel or type(frame.channelList) ~= "table" then
-        return
-    end
+    if type(docked) == "table" then
+        local inOrder = true
+        local lastPosition = 0
 
-    local channels = {}
-    for key, value in pairs(frame.channelList) do
-        if type(key) == "string" then
-            channels[#channels + 1] = key
-        elseif type(value) == "string" then
-            channels[#channels + 1] = value
+        for _, frame in ipairs(frames) do
+            local position = IndexOf(docked, frame)
+
+            if not position or position < lastPosition then
+                inOrder = false
+                break
+            end
+
+            lastPosition = position
+        end
+
+        if inOrder then
+            return
         end
     end
 
-    for _, channelName in ipairs(channels) do
-        SafeCall(ChatFrame_RemoveChannel, frame, channelName)
+    local selected
 
-        if RemoveChatWindowChannel and frame.GetID then
-            SafeCall(RemoveChatWindowChannel, frame:GetID(), channelName)
+    if FCFDock_GetSelectedWindow then
+        local ok, window = pcall(FCFDock_GetSelectedWindow, GENERAL_CHAT_DOCK)
+        selected = ok and window or nil
+    end
+
+    -- FCF_DockFrame ignores frames that are already docked, so undock first
+    -- and re-dock at the end of the dock to move them.
+    for _, frame in ipairs(frames) do
+        if frame.isDocked and FCF_UnDockFrame then
+            SafeCall(FCF_UnDockFrame, frame)
         end
+
+        SafeCall(FCF_DockFrame, frame)
+    end
+
+    if selected and FCFDock_SelectWindow then
+        SafeCall(FCFDock_SelectWindow, GENERAL_CHAT_DOCK, selected)
     end
 end
 
-function ClearFrameFilters(frame)
-    if frame and frame.RemoveAllMessageGroups then
-        SafeCall(frame.RemoveAllMessageGroups, frame)
-    elseif ChatFrame_RemoveAllMessageGroups then
-        SafeCall(ChatFrame_RemoveAllMessageGroups, frame)
-    end
-
-    RemoveAllChannels(frame)
-end
-
-local function AddMessageGroups(frame, groups)
-    if type(groups) ~= "table" then
-        return
-    end
-
-    for _, group in ipairs(groups) do
-        if frame and frame.AddMessageGroup then
-            SafeCall(frame.AddMessageGroup, frame, group)
-        else
-            SafeCall(ChatFrame_AddMessageGroup, frame, group)
-        end
-    end
-end
-
-local function AddChannelName(channels, channelName)
-    if type(channelName) ~= "string" or channelName == "" or channels[channelName] then
-        return
-    end
-
-    channels[channelName] = true
-    channels[#channels + 1] = channelName
-end
+---------------------------------------------------------------------------
+-- Channels and routing
+---------------------------------------------------------------------------
 
 local function NormalizeChannelName(channelName)
-    channelName = Trim(channelName or "")
+    channelName = Trim(channelName)
     channelName = channelName:gsub("^%d+%.%s*", "")
 
     return string.lower(channelName)
@@ -578,7 +731,7 @@ local function GetJoinedChannels()
 
     while index <= #values do
         if type(values[index]) == "number" and type(values[index + 1]) == "string" then
-            AddChannelName(channels, values[index + 1])
+            AddUnique(channels, values[index + 1])
             index = index + 3
         else
             index = index + 1
@@ -588,48 +741,167 @@ local function GetJoinedChannels()
     return channels
 end
 
-local function MatchesConfiguredChannel(tab, channelName)
-    if type(channelName) ~= "string" then
+-- "Trade" matches "Trade", "Trade - City" and "Trade (Services)", but not "Tradesmen".
+local function ChannelMatches(configuredName, channelName)
+    local configured = NormalizeChannelName(configuredName)
+    local actual = NormalizeChannelName(channelName)
+
+    if configured == "" or actual:sub(1, #configured) ~= configured then
         return false
     end
 
-    local normalizedChannel = NormalizeChannelName(channelName)
-
-    if type(tab.channels) == "table" then
-        for _, configuredName in ipairs(tab.channels) do
-            if normalizedChannel == NormalizeChannelName(configuredName) then
-                return true
-            end
-        end
-    end
-
-    if type(tab.channelPatterns) == "table" then
-        for _, pattern in ipairs(tab.channelPatterns) do
-            if normalizedChannel:find(NormalizeChannelName(pattern), 1, true) then
-                return true
-            end
-        end
-    end
-
-    return false
+    local nextChar = actual:sub(#configured + 1, #configured + 1)
+    return nextChar == "" or not nextChar:match("[%w]")
 end
 
-local function GetChannelsForTab(tab)
+local function GetNamedChannelsForTab(tab)
     local channels = {}
 
-    if type(tab.channels) == "table" then
-        for _, channelName in ipairs(tab.channels) do
-            AddChannelName(channels, channelName)
-        end
+    for _, channelName in ipairs(tab.channels) do
+        AddUnique(channels, channelName)
     end
 
-    for _, channelName in ipairs(GetJoinedChannels()) do
-        if MatchesConfiguredChannel(tab, channelName) then
-            AddChannelName(channels, channelName)
+    if #channels == 0 then
+        return channels
+    end
+
+    for _, joined in ipairs(GetJoinedChannels()) do
+        for _, configured in ipairs(tab.channels) do
+            if ChannelMatches(configured, joined) then
+                AddUnique(channels, joined)
+                break
+            end
         end
     end
 
     return channels
+end
+
+local function GetCommunityChannels()
+    local channels = {}
+
+    if not (C_Club and C_Club.GetSubscribedClubs and C_Club.GetStreams and GetChannelName) then
+        return channels
+    end
+
+    local okClubs, clubs = pcall(C_Club.GetSubscribedClubs)
+
+    if not okClubs or type(clubs) ~= "table" then
+        return channels
+    end
+
+    for _, club in ipairs(clubs) do
+        local okStreams, streams = pcall(C_Club.GetStreams, club.clubId)
+
+        if okStreams and type(streams) == "table" then
+            for _, stream in ipairs(streams) do
+                local channelName
+
+                if ChatFrameUtil and ChatFrameUtil.GetCommunitiesChannelName then
+                    channelName = ChatFrameUtil.GetCommunitiesChannelName(club.clubId, stream.streamId)
+                else
+                    channelName = ("Community:%s:%s"):format(tostring(club.clubId), tostring(stream.streamId))
+                end
+
+                -- Only streams that are joined as chat channels can be routed.
+                local channelID = GetChannelName(channelName)
+
+                if type(channelID) == "number" and channelID > 0 then
+                    AddUnique(channels, channelName)
+                end
+            end
+        end
+    end
+
+    return channels
+end
+
+local function GroupExists(group)
+    return type(ChatTypeGroup) ~= "table" or ChatTypeGroup[group] ~= nil
+end
+
+addon.GroupExists = GroupExists
+
+-- Adds a tab's message groups and channels to its window (without removing
+-- anything) and records what was routed.
+local function RouteTab(frame, tab, routed)
+    for _, group in ipairs(tab.groups) do
+        if GroupExists(group) then
+            if not FrameHas(frame, "ContainsMessageGroup", group) then
+                FrameCall(frame, "AddMessageGroup", group)
+            end
+
+            routed.groups[group] = true
+        end
+    end
+
+    local channels = GetNamedChannelsForTab(tab)
+
+    if #channels > 0 and not FrameHas(frame, "ContainsMessageGroup", "CHANNEL") then
+        FrameCall(frame, "AddMessageGroup", "CHANNEL")
+    end
+
+    if IndexOf(tab.groups, "COMMUNITIES_CHANNEL") then
+        for _, channelName in ipairs(GetCommunityChannels()) do
+            AddUnique(channels, channelName)
+        end
+    end
+
+    for _, channelName in ipairs(channels) do
+        if not FrameHas(frame, "ContainsChannel", channelName) then
+            FrameCall(frame, "AddChannel", channelName)
+        end
+
+        routed.channels[channelName] = true
+    end
+end
+
+-- Removes routed groups/channels from the main chat window, and puts back
+-- anything this addon removed earlier that is no longer routed elsewhere.
+-- Pass nil to restore everything.
+local function UpdateMainTab(routed)
+    local main = DEFAULT_CHAT_FRAME or ChatFrame1
+
+    if not main or not charDB then
+        return
+    end
+
+    local removed = charDB.mainRemoved
+    routed = routed or { groups = {}, channels = {} }
+
+    for group in pairs(removed.groups) do
+        if not routed.groups[group] then
+            FrameCall(main, "AddMessageGroup", group)
+            removed.groups[group] = nil
+        end
+    end
+
+    for channelName in pairs(removed.channels) do
+        if not routed.channels[channelName] then
+            FrameCall(main, "AddChannel", channelName)
+            removed.channels[channelName] = nil
+        end
+    end
+
+    for group in pairs(routed.groups) do
+        -- CHANNEL covers every channel, so it is never removed as a whole;
+        -- individual channels are removed below instead.
+        if group ~= "CHANNEL" and not removed.groups[group] and FrameHas(main, "ContainsMessageGroup", group) then
+            FrameCall(main, "RemoveMessageGroup", group)
+            removed.groups[group] = true
+        end
+    end
+
+    for channelName in pairs(routed.channels) do
+        if not removed.channels[channelName] and FrameHas(main, "ContainsChannel", channelName) then
+            FrameCall(main, "RemoveChannel", channelName)
+            removed.channels[channelName] = true
+        end
+    end
+end
+
+function addon:RestoreMainTab()
+    UpdateMainTab(nil)
 end
 
 local function IsChannelJoined(channelName)
@@ -644,13 +916,7 @@ local function IsChannelJoined(channelName)
 end
 
 local function RequestChannelJoins(channels)
-    local requested = 0
-    local alreadyJoined = 0
-    local failed = 0
-
-    if type(channels) ~= "table" then
-        return requested, alreadyJoined, failed
-    end
+    local requested, alreadyJoined, failed = 0, 0, 0
 
     if not JoinChannelByName then
         return requested, alreadyJoined, #channels
@@ -669,23 +935,15 @@ local function RequestChannelJoins(channels)
     return requested, alreadyJoined, failed
 end
 
-local function JoinMissingChannels(tab)
-    if not db.autoJoinChannels or type(tab.channels) ~= "table" then
-        return
-    end
-
-    RequestChannelJoins(tab.channels)
-end
-
-local function GetSelectedNamedChannels()
+local function GetEnabledNamedChannels()
     local channels = {}
 
-    for _, key in ipairs(TAB_ORDER) do
-        local tab = db.tabs and db.tabs[key]
+    for _, key in ipairs(db.tabOrder) do
+        local tab = db.tabs[key]
 
-        if tab and tab.enabled and type(tab.channels) == "table" then
+        if tab.enabled then
             for _, channelName in ipairs(tab.channels) do
-                AddChannelName(channels, channelName)
+                AddUnique(channels, channelName)
             end
         end
     end
@@ -694,10 +952,10 @@ local function GetSelectedNamedChannels()
 end
 
 function addon:JoinSelectedChannels()
-    local channels = GetSelectedNamedChannels()
+    local channels = GetEnabledNamedChannels()
 
     if #channels == 0 then
-        Print("no selected managed tabs include named channels.", true)
+        Print("no enabled tabs list named channels.", true)
         return
     end
 
@@ -725,49 +983,33 @@ function addon:JoinSelectedChannels()
         parts[1] = "nothing to join"
     end
 
-    Print("selected channels: " .. table.concat(parts, "; ") .. ".", true)
+    Print("channels: " .. table.concat(parts, "; ") .. ".", true)
 end
 
-local function AddChannelToFrame(frame, channelName)
-    if frame and frame.AddChannel then
-        SafeCall(frame.AddChannel, frame, channelName)
-    elseif ChatFrame_AddChannel then
-        SafeCall(ChatFrame_AddChannel, frame, channelName)
+---------------------------------------------------------------------------
+-- Appearance
+---------------------------------------------------------------------------
+
+function addon:GetFontOption(key)
+    for _, option in ipairs(self.FONT_OPTIONS) do
+        if option.key == key then
+            return option
+        end
     end
 
-    if AddChatWindowChannel and frame and frame.GetID then
-        SafeCall(AddChatWindowChannel, frame:GetID(), channelName)
-    end
-end
-
-local function AddChannels(frame, tab)
-    if not frame or (not frame.AddChannel and not ChatFrame_AddChannel) then
-        return
-    end
-
-    JoinMissingChannels(tab)
-
-    for _, channelName in ipairs(GetChannelsForTab(tab)) do
-        AddChannelToFrame(frame, channelName)
-    end
+    return self.FONT_OPTIONS[1]
 end
 
 local function ApplyFrameAppearance(frame)
-    local appearance = db and db.appearance
-    local background = appearance and appearance.background
-
-    if not appearance or not appearance.enabled or not background or not frame or not frame.GetID then
-        return
-    end
-
+    local appearance = db.appearance
+    local background = appearance.background
     local frameID = frame:GetID()
     local r = Clamp(background.r, 0, 1)
     local g = Clamp(background.g, 0, 1)
     local b = Clamp(background.b, 0, 1)
     local alpha = Clamp(background.alpha, 0, 1)
     local fontSize = Clamp(appearance.fontSize, 8, 24)
-    local fontFile = GetSelectedFontFile()
-    local fontFlags = appearance.fontFlags or ""
+    local fontFile = addon:GetFontOption(appearance.fontKey).file
 
     if FCF_SetWindowColor then
         SafeCall(FCF_SetWindowColor, frame, r, g, b)
@@ -787,19 +1029,20 @@ local function ApplyFrameAppearance(frame)
         SafeCall(SetChatWindowSize, frameID, fontSize)
     end
 
-    if fontFile and frame.SetFont then
-        SafeCall(frame.SetFont, frame, fontFile, fontSize, fontFlags)
-    end
+    -- WoW saves the font size but not the face, so the face is re-applied at
+    -- every login and whenever a chat window opens.
+    local ok, _, _, fontFlags = FrameCall(frame, "GetFont")
+    FrameCall(frame, "SetFont", fontFile, fontSize, (ok and fontFlags) or "")
 end
 
-local function ApplyAppearanceToCurrentTabs()
-    local styled = 0
-
-    if not db or not db.appearance or not db.appearance.enabled then
-        return styled
+local function ApplyAppearance()
+    if not db or not db.enabled or not db.appearance.enabled then
+        return 0
     end
 
-    for _, frame in ipairs(GetCurrentChatFrames()) do
+    local styled = 0
+
+    for _, frame in ipairs(GetStylableFrames()) do
         ApplyFrameAppearance(frame)
         styled = styled + 1
     end
@@ -808,673 +1051,533 @@ local function ApplyAppearanceToCurrentTabs()
 end
 
 function addon:ApplyVisuals()
-    ApplyAppearanceToCurrentTabs()
+    return ApplyAppearance()
 end
 
-local function RefreshCurrentTabsText()
-    if not currentTabsText then
-        return
+---------------------------------------------------------------------------
+-- Apply
+---------------------------------------------------------------------------
+
+local function QueueAfterCombat(verbose, light)
+    if not pendingApply then
+        pendingApply = { verbose = false, light = true }
     end
 
-    local names = GetCurrentChatTabNames()
+    pendingApply.verbose = pendingApply.verbose or verbose
+    pendingApply.light = pendingApply.light and light
 
-    currentTabsText:SetText(FormatCurrentTabsText(names))
+    eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 end
 
-local function CloseManagedFrame(tab)
-    local removed = 0
-
-    if not tab then
-        return removed
+-- verbose: print a summary.
+-- light: only add newly available channels to existing tabs (used when
+-- channels change); don't create, close, clear, dock or restyle anything.
+function addon:Apply(verbose, light)
+    if not db then
+        return nil
     end
 
-    for _, frame in ipairs(GetChatFramesByName(tab.name)) do
-        if CloseChatFrame(frame) then
-            removed = removed + 1
+    if not db.enabled then
+        UpdateMainTab(nil)
+
+        if verbose then
+            Print("disabled. Type " .. COMMAND .. " enable to turn it back on.", true)
+        end
+
+        return nil
+    end
+
+    if InCombatLockdown and InCombatLockdown() then
+        QueueAfterCombat(verbose, light)
+
+        if verbose then
+            Print("in combat; tabs will be updated when combat ends.", true)
+        end
+
+        return nil
+    end
+
+    local result = { configured = 0, missing = 0, removed = 0, styled = 0, missingNames = {} }
+    local routed = { groups = {}, channels = {} }
+    local managedFrames = {}
+
+    if not light then
+        if db.legacyRaidTabName then
+            result.removed = result.removed + CloseFramesNamed(db.legacyRaidTabName)
+            db.legacyRaidTabName = nil
+        end
+
+        -- Windows that belonged to tabs that have since been deleted.
+        for key in pairs(charDB.owned) do
+            if not db.tabs[key] then
+                result.removed = result.removed + CloseOwnedFrame(key)
+            end
         end
     end
 
-    return removed
-end
+    for _, key in ipairs(db.tabOrder) do
+        local tab = db.tabs[key]
 
-function addon:Apply(forceMessage)
-    if not db or not db.enabled then
-        if forceMessage then
-            Print("disabled.", true)
-        end
-        return
-    end
-
-    local configured = 0
-    local missing = 0
-    local removed = 0
-    local styled = 0
-
-    if db.legacyRaidTabName then
-        removed = removed + CloseManagedFrame({ name = db.legacyRaidTabName })
-        db.legacyRaidTabName = nil
-    end
-
-    for _, key in ipairs(TAB_ORDER) do
-        local tab = db.tabs and db.tabs[key]
-
-        if tab and tab.enabled then
-            local frame, duplicatesRemoved = EnsureChatFrame(tab)
-            removed = removed + (duplicatesRemoved or 0)
+        if tab.enabled then
+            local frame, created, duplicatesClosed = EnsureChatFrame(key, tab, light)
+            result.removed = result.removed + duplicatesClosed
 
             if frame then
-                if db.clearManagedFilters then
+                if not light and (created or db.clearManagedFilters) then
                     ClearFrameFilters(frame)
                 end
 
-                AddMessageGroups(frame, tab.groups)
-                AddChannels(frame, tab)
-                configured = configured + 1
-            else
-                missing = missing + 1
-            end
-        elseif tab then
-            removed = removed + CloseManagedFrame(tab)
-        end
-    end
-
-    styled = ApplyAppearanceToCurrentTabs()
-
-    if forceMessage and db.statusMessages then
-        local message = "configured " .. configured .. " tabs"
-
-        if removed > 0 then
-            message = message .. "; removed " .. removed
-        end
-
-        if styled > 0 then
-            message = message .. "; styled " .. styled
-        end
-
-        if missing > 0 then
-            Print(message .. "; " .. missing .. " could not be created. Chat window limit may be full.", true)
-        else
-            Print(message .. ".", true)
-        end
-    end
-end
-
-local function CreateTitle(parent, text)
-    local title = parent:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-    title:SetPoint("TOPLEFT", 16, -16)
-    title:SetText(text)
-    return title
-end
-
-local function CreateDescription(parent, text, anchor)
-    local description = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    description:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -8)
-    description:SetPoint("RIGHT", parent, "RIGHT", -24, 0)
-    description:SetJustifyH("LEFT")
-    description:SetText(text)
-    return description
-end
-
-local function CreateCheckButton(parent, label, tooltip, getValue, setValue, anchor, yOffset, onChange)
-    controlIndex = controlIndex + 1
-
-    local check = CreateFrame("CheckButton", ADDON_NAME .. "Option" .. controlIndex, parent, "InterfaceOptionsCheckButtonTemplate")
-    check:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, yOffset or -8)
-
-    if check.Text then
-        check.Text:SetText(label)
-    else
-        local checkName = check:GetName()
-        local textRegion = checkName and _G[checkName .. "Text"]
-
-        if textRegion then
-            textRegion:SetText(label)
-        end
-    end
-
-    check.tooltipText = tooltip
-    check:SetScript("OnClick", function(self)
-        setValue(self:GetChecked() == true)
-
-        if onChange then
-            onChange()
-        end
-    end)
-
-    parent.refreshers[#parent.refreshers + 1] = function()
-        check:SetChecked(getValue() == true)
-    end
-
-    return check
-end
-
-local function CreateSlider(parent, label, tooltip, minValue, maxValue, step, getValue, setValue, anchor, yOffset, formatValue, lowLabel, highLabel, onChange, width)
-    controlIndex = controlIndex + 1
-
-    local sliderName = ADDON_NAME .. "Slider" .. controlIndex
-    local slider = CreateFrame("Slider", sliderName, parent, "OptionsSliderTemplate")
-    local sliderWidth = width or COMPACT_SLIDER_WIDTH
-    slider:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 4, yOffset or -24)
-    slider:SetWidth(sliderWidth)
-    slider:SetMinMaxValues(minValue, maxValue)
-    slider:SetValueStep(step)
-    slider:SetObeyStepOnDrag(true)
-    slider.tooltipText = tooltip
-
-    local labelText = _G[sliderName .. "Text"]
-    local lowText = _G[sliderName .. "Low"]
-    local highText = _G[sliderName .. "High"]
-
-    if labelText then
-        labelText:ClearAllPoints()
-        labelText:SetPoint("BOTTOMLEFT", slider, "TOPLEFT", 0, 4)
-        labelText:SetWidth(sliderWidth - 60)
-        labelText:SetJustifyH("LEFT")
-        labelText:SetText(label)
-    end
-
-    if lowText then
-        lowText:SetText(lowLabel or tostring(minValue))
-    end
-
-    if highText then
-        highText:SetText(highLabel or tostring(maxValue))
-    end
-
-    local valueText = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    valueText:SetPoint("BOTTOMRIGHT", slider, "TOPRIGHT", 0, 4)
-    valueText:SetWidth(56)
-    valueText:SetJustifyH("RIGHT")
-    formatValue = formatValue or tostring
-
-    local function SetValueText(value)
-        valueText:SetText(formatValue(value))
-    end
-
-    slider:SetScript("OnValueChanged", function(_, value)
-        value = Round(value, 2)
-        setValue(value)
-        SetValueText(value)
-
-        if onChange and not slider.refreshing then
-            onChange()
-        end
-    end)
-
-    parent.refreshers[#parent.refreshers + 1] = function()
-        local value = Clamp(getValue(), minValue, maxValue)
-        slider.refreshing = true
-        slider:SetValue(value)
-        slider.refreshing = false
-        SetValueText(value)
-    end
-
-    return slider
-end
-
-local CreateButton
-
-local function CreateDropdown(parent, label, tooltip, options, getValue, setValue, anchor, yOffset, onChange, width)
-    controlIndex = controlIndex + 1
-
-    local labelText = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    labelText:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 4, yOffset or -18)
-    labelText:SetText(label)
-
-    local function GetLabelForValue(value)
-        for _, option in ipairs(options) do
-            if option.key == value then
-                return option.label
-            end
-        end
-
-        return options[1] and options[1].label or ""
-    end
-
-    if UIDropDownMenu_Initialize and UIDropDownMenu_CreateInfo and UIDropDownMenu_AddButton and UIDropDownMenu_SetWidth and UIDropDownMenu_SetText then
-        local dropdownName = ADDON_NAME .. "Dropdown" .. controlIndex
-        local dropdown = CreateFrame("Frame", dropdownName, parent, "UIDropDownMenuTemplate")
-        dropdown:SetPoint("TOPLEFT", labelText, "BOTTOMLEFT", -18, -2)
-        dropdown.tooltipText = tooltip
-
-        UIDropDownMenu_SetWidth(dropdown, width or COMPACT_DROPDOWN_WIDTH)
-        UIDropDownMenu_Initialize(dropdown, function(_, level)
-            for _, option in ipairs(options) do
-                local info = UIDropDownMenu_CreateInfo()
-                info.text = option.label
-                info.checked = option.key == getValue()
-                info.func = function()
-                    setValue(option.key)
-                    UIDropDownMenu_SetText(dropdown, GetLabelForValue(getValue()))
-
-                    if onChange then
-                        onChange()
-                    end
+                if db.autoJoinChannels and not light then
+                    RequestChannelJoins(tab.channels)
                 end
 
-                UIDropDownMenu_AddButton(info, level)
+                RouteTab(frame, tab, routed)
+                managedFrames[#managedFrames + 1] = frame
+                result.configured = result.configured + 1
+            elseif not light then
+                result.missing = result.missing + 1
+                result.missingNames[#result.missingNames + 1] = tab.name
             end
-        end)
-
-        parent.refreshers[#parent.refreshers + 1] = function()
-            UIDropDownMenu_SetText(dropdown, GetLabelForValue(getValue()))
+        elseif not light then
+            result.removed = result.removed + CloseOwnedFrame(key)
         end
-
-        return dropdown
     end
 
-    local button = CreateButton(parent, GetLabelForValue(getValue()), (width or COMPACT_DROPDOWN_WIDTH) + 30, labelText, 0)
-    button.tooltipText = tooltip
-    button:SetScript("OnClick", function()
-        local currentValue = getValue()
-        local nextIndex = 1
+    if not light and db.dockTabs then
+        OrderDock(managedFrames)
+    end
 
-        for index, option in ipairs(options) do
-            if option.key == currentValue then
-                nextIndex = index + 1
-                break
+    UpdateMainTab(db.removeFromMainTab and routed or nil)
+
+    if not light then
+        result.styled = ApplyAppearance()
+        self.lastResult = result
+    end
+
+    if verbose then
+        local message = "configured " .. result.configured .. " tab" .. (result.configured == 1 and "" or "s")
+
+        if result.removed > 0 then
+            message = message .. "; closed " .. result.removed
+        end
+
+        if result.styled > 0 then
+            message = message .. "; styled " .. result.styled
+        end
+
+        if result.missing > 0 then
+            message = message .. "; couldn't create " .. table.concat(result.missingNames, ", ")
+                .. " (the chat window limit is probably full)"
+        end
+
+        Print(message .. ".", true)
+    end
+
+    if not light and self.OnApplied then
+        self:OnApplied(result)
+    end
+
+    return result
+end
+
+---------------------------------------------------------------------------
+-- Tab management (used by the options panel and slash commands)
+---------------------------------------------------------------------------
+
+function addon:GetTabOrder()
+    return db.tabOrder
+end
+
+function addon:GetTab(key)
+    return db.tabs[key]
+end
+
+function addon:IsBuiltinTab(key)
+    return DEFAULT_TABS[key] ~= nil
+end
+
+function addon:FindTabKey(query)
+    local wanted = Lower(query)
+
+    if wanted == "local" then
+        wanted = "localchannels"
+    end
+
+    for _, key in ipairs(db.tabOrder) do
+        if Lower(key) == wanted or Lower(db.tabs[key].name) == wanted then
+            return key
+        end
+    end
+
+    return nil
+end
+
+function addon:SetTabEnabled(key, enabled)
+    local tab = db.tabs[key]
+
+    if tab then
+        tab.enabled = enabled and true or false
+    end
+end
+
+function addon:ValidateTabName(key, name)
+    name = Trim(name)
+
+    if name == "" then
+        return nil, "The name can't be empty."
+    end
+
+    if #name > 30 then
+        return nil, "The name must be 30 characters or fewer."
+    end
+
+    for otherKey, tab in pairs(db.tabs) do
+        if otherKey ~= key and Lower(tab.name) == Lower(name) then
+            return nil, "Another tab already uses that name."
+        end
+    end
+
+    for id = 1, NumReservedWindows() do
+        if Lower(GetWindowName(id)) == Lower(name) then
+            return nil, "That name belongs to a built-in chat window."
+        end
+    end
+
+    return name
+end
+
+function addon:RenameTab(key, name)
+    local tab = db.tabs[key]
+
+    if not tab then
+        return false, "Unknown tab."
+    end
+
+    local validName, err = self:ValidateTabName(key, name)
+
+    if not validName then
+        return false, err
+    end
+
+    tab.name = validName
+    return true
+end
+
+function addon:SetTabChannels(key, text)
+    local tab = db.tabs[key]
+
+    if not tab then
+        return
+    end
+
+    local channels = {}
+
+    for part in tostring(text or ""):gmatch("[^,]+") do
+        AddUnique(channels, part)
+    end
+
+    tab.channels = channels
+end
+
+function addon:TabHasMessageType(key, messageType)
+    local tab = db.tabs[key]
+    local anyAvailable = false
+
+    for _, group in ipairs(messageType.groups) do
+        if GroupExists(group) then
+            anyAvailable = true
+
+            if not IndexOf(tab.groups, group) then
+                return false
             end
         end
-
-        if nextIndex > #options then
-            nextIndex = 1
-        end
-
-        setValue(options[nextIndex].key)
-        button:SetText(GetLabelForValue(getValue()))
-
-        if onChange then
-            onChange()
-        end
-    end)
-
-    parent.refreshers[#parent.refreshers + 1] = function()
-        button:SetText(GetLabelForValue(getValue()))
     end
 
-    return button
+    return anyAvailable
 end
 
-local function CreateColorPicker(parent, label, tooltip, getColor, setColor, anchor, yOffset)
-    controlIndex = controlIndex + 1
+function addon:SetTabMessageType(key, messageType, enabled)
+    local tab = db.tabs[key]
 
-    local button = CreateFrame("Button", ADDON_NAME .. "Color" .. controlIndex, parent)
-    button:SetSize(24, 24)
-    button:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 4, yOffset or -14)
-    button.tooltipText = tooltip
-
-    local border = button:CreateTexture(nil, "BACKGROUND")
-    border:SetAllPoints()
-    border:SetColorTexture(0.75, 0.75, 0.75, 1)
-
-    local swatch = button:CreateTexture(nil, "ARTWORK")
-    swatch:SetPoint("TOPLEFT", 2, -2)
-    swatch:SetPoint("BOTTOMRIGHT", -2, 2)
-    swatch:SetColorTexture(0.02, 0.02, 0.02, 1)
-    button.swatch = swatch
-
-    local text = parent:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    text:SetPoint("LEFT", button, "RIGHT", 8, 0)
-    text:SetText(label)
-
-    local function RefreshSwatch()
-        local color = getColor() or DEFAULTS.appearance.background
-        swatch:SetColorTexture(Clamp(color.r, 0, 1), Clamp(color.g, 0, 1), Clamp(color.b, 0, 1), 1)
-    end
-
-    local function OpenPicker()
-        local color = getColor()
-        local original = {
-            r = Clamp(color.r, 0, 1),
-            g = Clamp(color.g, 0, 1),
-            b = Clamp(color.b, 0, 1),
-            a = Clamp(color.alpha, 0, 1),
-        }
-
-        local function ApplyColor()
-            local r, g, b = ColorPickerFrame:GetColorRGB()
-
-            if ColorPickerFrame.GetColorAlpha then
-                setColor(r, g, b, ColorPickerFrame:GetColorAlpha())
-            else
-                setColor(r, g, b, ColorPickerFrame.opacity or original.a)
-            end
-
-            RefreshSwatch()
-            addon:RefreshOptions()
-        end
-
-        local function CancelColor()
-            addon:RefreshOptions()
-        end
-
-        if ColorPickerFrame and ColorPickerFrame.SetupColorPickerAndShow then
-            ColorPickerFrame:SetupColorPickerAndShow({
-                r = original.r,
-                g = original.g,
-                b = original.b,
-                opacity = original.a,
-                hasOpacity = true,
-                swatchFunc = ApplyColor,
-                opacityFunc = ApplyColor,
-                cancelFunc = CancelColor,
-            })
-        elseif ColorPickerFrame then
-            ColorPickerFrame.func = ApplyColor
-            ColorPickerFrame.opacityFunc = ApplyColor
-            ColorPickerFrame.cancelFunc = CancelColor
-            ColorPickerFrame.hasOpacity = true
-            ColorPickerFrame.opacity = original.a
-            ColorPickerFrame.previousValues = { original.r, original.g, original.b, original.a }
-            ColorPickerFrame:SetColorRGB(original.r, original.g, original.b)
-            ColorPickerFrame:Hide()
-            ColorPickerFrame:Show()
-        end
-    end
-
-    button:SetScript("OnClick", OpenPicker)
-    parent.refreshers[#parent.refreshers + 1] = RefreshSwatch
-
-    return button
-end
-
-function CreateButton(parent, label, width, anchor, xOffset)
-    local button = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
-    button:SetSize(width or 110, 24)
-    button:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", xOffset or 0, -16)
-    button:SetText(label)
-    return button
-end
-
-function addon:RefreshOptions(syncAppearance)
-    if not optionsPanel or type(optionsPanel.refreshers) ~= "table" then
+    if not tab then
         return
     end
 
-    if syncAppearance then
-        SyncAppearanceFromCurrentTabs()
-    end
+    for _, group in ipairs(messageType.groups) do
+        local index = IndexOf(tab.groups, group)
 
-    RefreshCurrentTabsText()
-
-    for _, refresh in ipairs(optionsPanel.refreshers) do
-        refresh()
-    end
-end
-
-local function CreateOptionsContent(panel)
-    if panel.content then
-        return panel.content
-    end
-
-    local scrollFrame = CreateFrame("ScrollFrame", ADDON_NAME .. "OptionsScrollFrame", panel, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", 0, 0)
-    scrollFrame:SetPoint("BOTTOMRIGHT", -28, 0)
-
-    local content = CreateFrame("Frame", ADDON_NAME .. "OptionsContent", scrollFrame)
-    content:SetSize(760, 980)
-    content.refreshers = panel.refreshers
-    scrollFrame:SetScrollChild(content)
-
-    scrollFrame:SetScript("OnSizeChanged", function(_, width)
-        content:SetWidth(math.max(width - 12, PANEL_MIN_WIDTH))
-    end)
-
-    panel.scrollFrame = scrollFrame
-    panel.content = content
-
-    return content
-end
-
-local function BuildOptionsPanel(panel)
-    if panel.built then
-        addon:RefreshOptions()
-        return
-    end
-
-    panel.built = true
-    panel.refreshers = {}
-
-    local content = CreateOptionsContent(panel)
-    SyncAppearanceFromCurrentTabs()
-
-    local title = CreateTitle(content, DISPLAY_NAME)
-    local description = CreateDescription(content, "Global settings for automatically creating and maintaining managed chat tabs.", title)
-
-    local routingTitle = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    routingTitle:SetPoint("TOPLEFT", description, "BOTTOMLEFT", 0, -24)
-    routingTitle:SetText("Managed routing")
-
-    local clearFilters = CreateCheckButton(content, "Replace filters on managed tabs", "Clear existing filters before adding this addon's configured message groups and channels.", function()
-        return db.clearManagedFilters
-    end, function(value)
-        db.clearManagedFilters = value
-    end, routingTitle, -8)
-
-    local autoJoin = CreateCheckButton(content, "Auto-join named channels", "Try to join configured named channels such as Trade and Services when they are available.", function()
-        return db.autoJoinChannels
-    end, function(value)
-        db.autoJoinChannels = value
-    end, clearFilters, -4)
-
-    local joinChannels = CreateButton(content, "Join selected channels", 170, autoJoin, 0)
-    joinChannels.tooltipText = "Immediately join named channels belonging to enabled managed tabs."
-    joinChannels:SetScript("OnClick", function()
-        addon:JoinSelectedChannels()
-    end)
-
-    local status = CreateCheckButton(content, "Show status messages", "Print a short confirmation when tabs are configured.", function()
-        return db.statusMessages
-    end, function(value)
-        db.statusMessages = value
-    end, joinChannels, -4)
-
-    local tabsTitle = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    tabsTitle:SetPoint("TOPLEFT", status, "BOTTOMLEFT", 0, -18)
-    tabsTitle:SetText("Managed tabs")
-
-    local previous = tabsTitle
-    for _, key in ipairs(TAB_ORDER) do
-        previous = CreateCheckButton(content, TAB_LABELS[key], "Enable or disable this managed chat tab.", function()
-            return db.tabs[key].enabled
-        end, function(value)
-            db.tabs[key].enabled = value
-        end, previous, -4)
-    end
-
-    local apply = CreateButton(content, "Apply Now", 110, previous, 0)
-    apply:SetScript("OnClick", function()
-        addon:Apply(true)
-    end)
-
-    local reset = CreateButton(content, "Reset", 90, previous, 120)
-    reset:SetScript("OnClick", function()
-        ResetDatabase()
-        addon:RefreshOptions()
-        Print("settings reset. Click Apply Now to update chat tabs.", true)
-    end)
-
-    local appearanceTitle = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-    appearanceTitle:SetPoint("TOPLEFT", description, "BOTTOMLEFT", RIGHT_COLUMN_OFFSET, -24)
-    appearanceTitle:SetText("All chat tab appearance")
-
-    currentTabsText = content:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    currentTabsText:SetPoint("TOPLEFT", appearanceTitle, "BOTTOMLEFT", 0, -8)
-    currentTabsText:SetWidth(RIGHT_COLUMN_WIDTH)
-    currentTabsText:SetHeight(72)
-    currentTabsText:SetJustifyH("LEFT")
-    currentTabsText:SetJustifyV("TOP")
-    currentTabsText:SetWordWrap(true)
-
-    if currentTabsText.SetNonSpaceWrap then
-        currentTabsText:SetNonSpaceWrap(false)
-    end
-
-    local applyAppearance = CreateCheckButton(content, "Apply visual settings live", "Apply the configured color, opacity, and font size to every current chat tab.", function()
-        return db.appearance.enabled
-    end, function(value)
-        db.appearance.enabled = value
-    end, currentTabsText, -8, function()
-        addon:ApplyVisuals()
-    end)
-
-    local colorPicker = CreateColorPicker(content, "Background color", "Choose the background color for all current chat tabs.", function()
-        return db.appearance.background
-    end, function(r, g, b, alpha)
-        local background = db.appearance.background
-        background.r = Clamp(r, 0, 1)
-        background.g = Clamp(g, 0, 1)
-        background.b = Clamp(b, 0, 1)
-        background.alpha = Clamp(alpha or background.alpha, 0, 1)
-        addon:ApplyVisuals()
-    end, applyAppearance, -8)
-
-    local opacity = CreateSlider(content, "Background opacity", "Set the background opacity for all current chat tabs.", 0, 1, 0.01, function()
-        return db.appearance.background.alpha
-    end, function(value)
-        db.appearance.background.alpha = Clamp(value, 0, 1)
-    end, colorPicker, -28, function(value)
-        return string.format("%d%%", math.floor((value * 100) + 0.5))
-    end, "0%", "100%", function()
-        addon:ApplyVisuals()
-    end, COMPACT_SLIDER_WIDTH)
-
-    local fontFace = CreateDropdown(content, "Font face", "Set the font face for all current chat tabs.", FONT_OPTIONS, function()
-        return db.appearance.fontKey or DEFAULTS.appearance.fontKey
-    end, function(value)
-        db.appearance.fontKey = value
-
-        local option = GetFontOptionByKey(value)
-        if option and option.file then
-            db.appearance.fontFile = option.file
+        if enabled and not index and GroupExists(group) then
+            tab.groups[#tab.groups + 1] = group
+        elseif not enabled and index then
+            table.remove(tab.groups, index)
         end
-    end, opacity, -34, function()
-        addon:ApplyVisuals()
-    end, COMPACT_DROPDOWN_WIDTH)
-
-    local fontSize = CreateSlider(content, "Font size", "Set the font size for all current chat tabs.", 8, 24, 1, function()
-        return db.appearance.fontSize
-    end, function(value)
-        db.appearance.fontSize = Clamp(value, 8, 24)
-    end, fontFace, -30, function(value)
-        return string.format("%d", math.floor(value + 0.5))
-    end, "8", "24", function()
-        addon:ApplyVisuals()
-    end, COMPACT_SLIDER_WIDTH)
-
-    addon:RefreshOptions()
-end
-
-function addon:RegisterOptions()
-    optionsPanel = CreateFrame("Frame", ADDON_NAME .. "OptionsPanel")
-    optionsPanel.name = DISPLAY_NAME
-    optionsPanel:SetScript("OnShow", BuildOptionsPanel)
-    self.optionsPanel = optionsPanel
-
-    if Settings and Settings.RegisterCanvasLayoutCategory and Settings.RegisterAddOnCategory then
-        settingsCategory = Settings.RegisterCanvasLayoutCategory(optionsPanel, DISPLAY_NAME)
-        Settings.RegisterAddOnCategory(settingsCategory)
-        self.settingsCategory = settingsCategory
-    elseif InterfaceOptions_AddCategory then
-        InterfaceOptions_AddCategory(optionsPanel)
     end
 end
 
-function addon:OpenOptions()
-    if Settings and Settings.OpenToCategory and settingsCategory and settingsCategory.ID then
-        Settings.OpenToCategory(settingsCategory.ID)
-        return
+function addon:MoveTab(key, delta)
+    local order = db.tabOrder
+    local index = IndexOf(order, key)
+    local target = index and (index + delta)
+
+    if not index or target < 1 or target > #order then
+        return false
     end
 
-    if SettingsPanel and SettingsPanel.OpenToCategory and settingsCategory and settingsCategory.ID then
-        SettingsPanel:OpenToCategory(settingsCategory.ID)
-        return
-    end
-
-    if InterfaceOptionsFrame_OpenToCategory and optionsPanel then
-        InterfaceOptionsFrame_OpenToCategory(optionsPanel)
-        InterfaceOptionsFrame_OpenToCategory(optionsPanel)
-    end
+    order[index], order[target] = order[target], order[index]
+    return true
 end
 
-local function PrintHelp()
-    Print("Open " .. DISPLAY_NAME .. " and click Apply Now to update chat tabs.", true)
-    Print(COMMAND .. " options - open global settings.", true)
-    Print(COMMAND .. " enable | disable - toggle the addon.", true)
-    Print(COMMAND .. " tab <guild|party|communities|trade|whispers|local> on|off - toggle a tab.", true)
-    Print(COMMAND .. " reset - restore default settings.", true)
-end
-
-local function NormalizeTabKey(key)
-    key = LowerCommand(key)
-
-    if key == "local" then
-        return "localChannels"
+function addon:CreateCustomTab()
+    if #db.tabOrder >= MAX_TABS then
+        return nil, "You can have at most " .. MAX_TABS .. " tabs."
     end
+
+    local key
+
+    repeat
+        key = "custom" .. db.nextCustomId
+        db.nextCustomId = db.nextCustomId + 1
+    until not db.tabs[key]
+
+    local name = "New tab"
+    local suffix = 1
+
+    while not self:ValidateTabName(key, name) do
+        suffix = suffix + 1
+        name = "New tab " .. suffix
+    end
+
+    db.tabs[key] = { enabled = false, name = name, groups = {}, channels = {} }
+    db.tabOrder[#db.tabOrder + 1] = key
 
     return key
 end
 
+function addon:DeleteTab(key)
+    if self:IsBuiltinTab(key) or not db.tabs[key] then
+        return false
+    end
+
+    CloseOwnedFrame(key)
+    db.tabs[key] = nil
+
+    local index = IndexOf(db.tabOrder, key)
+
+    if index then
+        table.remove(db.tabOrder, index)
+    end
+
+    return true
+end
+
+function addon:RestoreDefaultTabs()
+    for key in pairs(db.tabs) do
+        if not self:IsBuiltinTab(key) then
+            CloseOwnedFrame(key)
+            db.tabs[key] = nil
+        end
+    end
+
+    for key, defaults in pairs(DEFAULT_TABS) do
+        db.tabs[key] = NewTab(defaults)
+    end
+
+    db.tabOrder = DeepCopy(DEFAULT_TAB_ORDER)
+end
+
+function addon:ResetAll()
+    ChatTabsOrganizerDB = {}
+    db = ChatTabsOrganizerDB
+    self.db = db
+    EnsureStructure()
+end
+
+---------------------------------------------------------------------------
+-- Slash commands
+---------------------------------------------------------------------------
+
+local function PrintHelp()
+    Print("commands:", true)
+    Print(COMMAND .. " options - open settings.", true)
+    Print(COMMAND .. " tabs - open the tab editor.", true)
+    Print(COMMAND .. " apply - update chat tabs now.", true)
+    Print(COMMAND .. " list - list managed tabs.", true)
+    Print(COMMAND .. " tab <name> on|off - turn a tab on or off.", true)
+    Print(COMMAND .. " join - join named channels used by enabled tabs.", true)
+    Print(COMMAND .. " enable | disable - turn the addon on or off.", true)
+    Print(COMMAND .. " reset - restore all default settings.", true)
+end
+
+local function PrintTabList()
+    for index, key in ipairs(db.tabOrder) do
+        local tab = db.tabs[key]
+        local state = tab.enabled and "|cff33ff99on|r" or "|cff999999off|r"
+        Print(index .. ". " .. tab.name .. " - " .. state, true)
+    end
+end
+
 local function HandleSlashCommand(message)
-    local command = LowerCommand(message)
+    local command = Lower(message)
 
     if command == "" or command == "help" then
         PrintHelp()
-    elseif command == "apply" then
-        Print("open options and click Apply Now to update chat tabs.", true)
     elseif command == "options" or command == "config" or command == "settings" then
         addon:OpenOptions()
+    elseif command == "tabs" or command == "edit" then
+        addon:OpenOptions(true)
+    elseif command == "apply" then
+        addon:Apply(true)
+    elseif command == "list" then
+        PrintTabList()
+    elseif command == "join" then
+        addon:JoinSelectedChannels()
     elseif command == "enable" then
         db.enabled = true
-        Print("enabled. Click Apply Now to update chat tabs.", true)
+        addon:Apply(true)
     elseif command == "disable" then
         db.enabled = false
-        Print("disabled.", true)
+        UpdateMainTab(nil)
+        Print("disabled. Your chat windows were left as they are.", true)
     elseif command == "reset" then
-        ResetDatabase()
-        addon:RefreshOptions()
-        Print("settings reset. Click Apply Now to update chat tabs.", true)
+        addon:ResetAll()
+        addon:Apply(true)
+        Print("settings reset.", true)
     else
-        local tabKey, state = command:match("^tab%s+(%S+)%s+(on)$")
-        tabKey = tabKey or command:match("^tab%s+(%S+)%s+(off)$")
-        state = state or command:match("^tab%s+%S+%s+(off)$")
+        local query, state = command:match("^tab%s+(.-)%s+(%a+)$")
 
-        if tabKey and state then
-            tabKey = NormalizeTabKey(tabKey)
+        if query and (state == "on" or state == "off") then
+            local key = addon:FindTabKey(query)
 
-            if db.tabs[tabKey] then
-                db.tabs[tabKey].enabled = state == "on"
-                addon:RefreshOptions()
-                Print(TAB_LABELS[tabKey] .. " tab " .. state .. ". Click Apply Now to update chat tabs.", true)
-                return
+            if key then
+                addon:SetTabEnabled(key, state == "on")
+                addon:Apply(false)
+                Print(db.tabs[key].name .. " tab " .. state .. ".", true)
+
+                if addon.RefreshOptions then
+                    addon:RefreshOptions()
+                end
+            else
+                Print("no tab named \"" .. query .. "\". Type " .. COMMAND .. " list.", true)
             end
+
+            return
         end
 
         Print("unknown command. Type " .. COMMAND .. " help.", true)
     end
 end
 
-function addon:OnAddonLoaded()
-    ChatTabsOrganizerDB = CopyDefaults(DEFAULTS, ChatTabsOrganizerDB)
-    db = ChatTabsOrganizerDB
-    self.db = db
-    MigrateDatabase()
+---------------------------------------------------------------------------
+-- Startup and events
+---------------------------------------------------------------------------
 
-    self:RegisterOptions()
+local function OnLoginApply()
+    loginApplied = true
+
+    if not db.enabled then
+        return
+    end
+
+    if db.autoApply then
+        addon:Apply(false)
+    else
+        ApplyAppearance()
+    end
+end
+
+local function ScheduleChannelRefresh()
+    if channelRefreshQueued or not loginApplied or not C_Timer then
+        return
+    end
+
+    channelRefreshQueued = true
+
+    C_Timer.After(CHANNEL_REFRESH_DELAY, function()
+        channelRefreshQueued = false
+
+        if db.enabled and db.autoApply then
+            addon:Apply(false, true)
+        end
+    end)
+end
+
+local function RestyleSoon()
+    if C_Timer then
+        C_Timer.After(0, ApplyAppearance)
+    else
+        ApplyAppearance()
+    end
+end
+
+function addon:OnAddonLoaded()
+    if type(ChatTabsOrganizerDB) ~= "table" then
+        ChatTabsOrganizerDB = {}
+    end
+
+    if type(ChatTabsOrganizerCharDB) ~= "table" then
+        ChatTabsOrganizerCharDB = {}
+    end
+
+    db = ChatTabsOrganizerDB
+    charDB = ChatTabsOrganizerCharDB
+    self.db = db
+
+    MigrateDatabase()
+    EnsureStructure()
+    EnsureCharStructure()
+
+    if self.RegisterOptions then
+        local ok, err = pcall(self.RegisterOptions, self)
+
+        if not ok then
+            Print("couldn't build the settings page: " .. tostring(err), true)
+        end
+    end
+
+    if hooksecurefunc then
+        if FCF_OpenTemporaryWindow then
+            hooksecurefunc("FCF_OpenTemporaryWindow", RestyleSoon)
+        end
+
+        if FCF_OpenNewWindow then
+            hooksecurefunc("FCF_OpenNewWindow", RestyleSoon)
+        end
+    end
 
     SLASH_CHATTABSORGANIZER1 = COMMAND
     SLASH_CHATTABSORGANIZER2 = "/chattabs"
     SlashCmdList.CHATTABSORGANIZER = HandleSlashCommand
 end
 
-local events = CreateFrame("Frame")
-events:RegisterEvent("ADDON_LOADED")
-events:SetScript("OnEvent", function(self, event, ...)
+eventFrame:RegisterEvent("ADDON_LOADED")
+eventFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "ADDON_LOADED" then
-        local loadedAddon = ...
-
-        if loadedAddon == ADDON_NAME then
+        if ... == ADDON_NAME then
+            self:UnregisterEvent("ADDON_LOADED")
             addon:OnAddonLoaded()
+            self:RegisterEvent("PLAYER_ENTERING_WORLD")
+            self:RegisterEvent("CHANNEL_UI_UPDATE")
+        end
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        local isInitialLogin, isReloadingUi = ...
+
+        if isInitialLogin or isReloadingUi then
+            if C_Timer then
+                C_Timer.After(LOGIN_APPLY_DELAY, OnLoginApply)
+            else
+                OnLoginApply()
+            end
+        end
+    elseif event == "CHANNEL_UI_UPDATE" then
+        ScheduleChannelRefresh()
+    elseif event == "PLAYER_REGEN_ENABLED" then
+        self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+
+        local pending = pendingApply
+        pendingApply = nil
+
+        if pending then
+            addon:Apply(pending.verbose, pending.light)
         end
     end
 end)
