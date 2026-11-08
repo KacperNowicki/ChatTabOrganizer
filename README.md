@@ -4,7 +4,7 @@
   <img src="assets/chat-tabs-organizer-logo.svg" alt="Chat Tabs Organizer logo" width="180">
 </p>
 
-Chat Tabs Organizer is a World of Warcraft Retail addon that helps keep chat windows separated by purpose: guild, party/raid, communities, trade/services, whispers, local channels, and any custom tabs you define.
+Chat Tabs Organizer is a World of Warcraft addon for Retail and WoW Forever that helps keep chat windows separated by purpose: guild, party/raid, communities, trade/services, whispers, local channels, and any custom tabs you define.
 
 ## How It Works
 
@@ -47,7 +47,7 @@ WoW doesn't save the chat font face, so the addon re-applies it at every login.
 
 ## Install
 
-1. Put the `ChatTabsOrganizer` folder in your Retail `Interface/AddOns` folder.
+1. Put the `ChatTabsOrganizer` folder in your game's `Interface/AddOns` folder: `_retail_/Interface/AddOns` for Retail, `_forever_/Interface/AddOns` for WoW Forever.
 2. Restart the game or run `/reload`.
 3. Open the addon settings, then the **Tabs** page, and choose the tabs you want.
 

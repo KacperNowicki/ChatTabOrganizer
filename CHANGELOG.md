@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1 - 2026-11-08
+
+- Added support for WoW Forever (Interface 16001). Forever uses the same chat and settings code as Retail, so the addon works the same on both.
+
 ## 0.2.0 - 2026-11-03
 
 Fixes:
